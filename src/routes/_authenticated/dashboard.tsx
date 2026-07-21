@@ -4,6 +4,7 @@ import { Coins, Wallet, TrendingUp, ArrowDownToLine, ArrowUpFromLine, Users, Tim
 import { supabase } from "@/integrations/supabase/client";
 import { fmt } from "@/lib/auth";
 import { generateDailyEarnings, releaseUnlockedEarnings } from "@/lib/api/earnings.functions";
+import { aggregateInvestmentEarnings, calculateInvestmentPlanMetrics, getWithdrawalUnlockDate, summarizePortfolioBalance } from "@/lib/investment-withdrawal";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — TRENDY INVESTMENT AGENCY" }] }),
@@ -138,6 +139,8 @@ function Dashboard() {
     if (activeCycles.length === 0) return null;
     let todayEarning = 0;
     let totalEarned = 0;
+    let totalExpectedProfit = 0;
+    let totalExpectedReturn = 0;
     let totalRemaining = 0;
     let dailyAmount = 0;
     let completedDays = 0;
@@ -148,21 +151,25 @@ function Dashboard() {
 
     for (const inv of activeCycles) {
       const duration = Math.max(1, Number(inv.duration_days || 1));
-      const profit = Math.max(0, Number(inv.projected_payout || 0) - Number(inv.plan_amount || 0));
-      const baseDaily = Math.floor(profit / duration);
-      const remainder = profit - (baseDaily * duration);
+      const metrics = calculateInvestmentPlanMetrics({
+        amount: Number(inv.plan_amount || 0),
+        roiPercent: Number(inv.roi_percent || 0),
+        durationDays: duration,
+      });
       const startKey = inv.start_at ? inv.start_at.slice(0, 10) : todayKey;
       const startMs = Date.parse(`${startKey}T00:00:00Z`);
       const todayMs = Date.parse(`${todayKey}T00:00:00Z`);
       const elapsedDays = Math.max(0, Math.min(duration, Math.floor((todayMs - startMs) / 86400000)));
       const cycleTodayEarning = dailyEarnings.find(row => row.investment_id === inv.id && row.earning_date === todayKey)?.amount ?? 0;
       const cycleTotalEarned = dailyEarnings.filter(row => row.investment_id === inv.id && row.earning_date <= todayKey && row.added_to_balance).reduce((sum, row) => sum + Number(row.amount), 0);
-      const cycleRemaining = Math.max(0, profit - cycleTotalEarned);
-      const cycleDailyAmount = elapsedDays >= duration ? baseDaily + remainder : baseDaily;
+      const cycleRemaining = Math.max(0, metrics.totalReturn - cycleTotalEarned);
+      const cycleDailyAmount = elapsedDays >= duration ? metrics.finalDayEarning : metrics.dailyEarning;
       const cycleNext = dailyEarnings.filter(row => row.investment_id === inv.id && row.earning_date > todayKey).map(row => row.earning_date).sort()[0] ?? null;
 
       todayEarning += cycleTodayEarning;
       totalEarned += cycleTotalEarned;
+      totalExpectedProfit += metrics.totalProfit;
+      totalExpectedReturn += metrics.totalReturn;
       totalRemaining += cycleRemaining;
       dailyAmount += cycleDailyAmount;
       completedDays += elapsedDays;
@@ -174,6 +181,8 @@ function Dashboard() {
     return {
       todayEarning,
       totalEarned,
+      totalExpectedProfit,
+      totalExpectedReturn,
       totalRemaining,
       dailyAmount,
       completedDays,
@@ -184,6 +193,16 @@ function Dashboard() {
     };
   }, [investments, dailyEarnings, todayKey]);
 
+  const investmentSummaries = useMemo(() => investments
+    .filter(i => i.status === "active")
+    .map((inv) => ({
+      ...inv,
+      ...aggregateInvestmentEarnings(inv, dailyEarnings, new Date()),
+      unlockDateKey: getWithdrawalUnlockDate(inv.start_at, inv.duration_days),
+    })), [dailyEarnings, investments]);
+  const portfolioBalance = summarizePortfolioBalance(profile?.balance ?? 0, investmentSummaries);
+  const availableBalance = portfolioBalance.availableBalance;
+
   return (
     <div className="space-y-8">
       <div>
@@ -192,7 +211,7 @@ function Dashboard() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat icon={Wallet} label="Available balance" value={`KSh ${fmt(Math.floor(profile?.balance ?? 0))}`} accent />
+        <Stat icon={Wallet} label="Available balance" value={`KSh ${fmt(Math.floor(availableBalance))}`} accent />
         <Stat icon={Coins} label="Active mining (locked)" value={`KSh ${fmt(activeMining)}`} sub={`${active.length} cycle${active.length===1?"":"s"}`} />
         <Stat icon={TrendingUp} label="Projected payouts" value={`KSh ${fmt(projectedTotal)}`} sub="From active cycles" />
         <Stat icon={CheckCircle2} label="Matured cycles" value={String(matured.length)} sub={`Mined KSh ${fmt(claims)}`} />
@@ -213,8 +232,10 @@ function Dashboard() {
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <Metric label="Today’s earning" value={`KSh ${fmt(dailySummary.todayEarning)}`} />
-            <Metric label="Total earned so far" value={`KSh ${fmt(dailySummary.totalEarned)}`} />
-            <Metric label="Remaining earnings" value={`KSh ${fmt(dailySummary.totalRemaining)}`} />
+            <Metric label="Total expected profit" value={`KSh ${fmt(dailySummary.totalExpectedProfit)}`} />
+            <Metric label="Total expected return" value={`KSh ${fmt(dailySummary.totalExpectedReturn)}`} />
+            <Metric label="Earnings received" value={`KSh ${fmt(dailySummary.totalEarned)}`} />
+            <Metric label="Remaining return" value={`KSh ${fmt(dailySummary.totalRemaining)}`} />
             <Metric label="Daily earning amount" value={`KSh ${fmt(dailySummary.dailyAmount)}`} />
             <Metric label="Days completed" value={String(dailySummary.completedDays)} />
             <Metric label="Days remaining" value={String(dailySummary.daysRemaining)} />
@@ -254,6 +275,38 @@ function Dashboard() {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-2xl border border-border/60 bg-card p-5">
+        <div className="flex items-end justify-between">
+          <h2 className="text-xl font-semibold">Investment unlock status</h2>
+          <Link to="/invest" className="text-sm font-medium text-primary hover:underline">+ Start new cycle</Link>
+        </div>
+        {investmentSummaries.length === 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">No active plans yet.</p>
+        ) : (
+          <div className="mt-4 space-y-3">
+            {investmentSummaries.map((inv) => (
+              <div key={inv.id} className="rounded-2xl border border-border/60 bg-background/70 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold">{inv.duration_days} days plan</div>
+                    <div className="text-xs text-muted-foreground">Unlocks on {inv.unlockDateKey ? new Date(`${inv.unlockDateKey}T00:00:00Z`).toLocaleDateString() : "—"}</div>
+                  </div>
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${inv.isUnlocked ? "bg-emerald-500/15 text-emerald-400" : "bg-amber-500/15 text-amber-400"}`}>
+                    {inv.isUnlocked ? "Withdrawable" : "Locked"}
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+                  <div>Accumulated: KSh {fmt(inv.accumulated)}</div>
+                  <div>Withdrawable: KSh {fmt(inv.withdrawable)}</div>
+                  <div>Locked: KSh {fmt(inv.locked)}</div>
+                </div>
+                <div className="mt-2 text-xs text-muted-foreground">Next earning: {inv.nextEarningDate ? new Date(`${inv.nextEarningDate}T00:00:00Z`).toLocaleDateString() : "—"}</div>
+              </div>
+            ))}
           </div>
         )}
       </section>

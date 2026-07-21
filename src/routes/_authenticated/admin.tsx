@@ -490,7 +490,7 @@ function AdminPage() {
       )}
 
       {tab === "withdrawals" && (
-        <WithdrawalsTab withdrawals={withdrawals} profiles={profiles} onFinalize={finalizeWithdrawal} />
+        <WithdrawalsTab withdrawals={withdrawals} profiles={profiles} settings={settings} onFinalize={finalizeWithdrawal} />
       )}
 
       {tab === "users" && <UsersTab users={profileList} roles={userRoles} onDone={refresh} />}
@@ -1126,7 +1126,7 @@ function InvestmentsTab({ investments, profiles, plans }: {
   );
 }
 
-function WithdrawalsTab({ withdrawals, profiles, onFinalize }: { withdrawals: WithdrawalRow[]; profiles: Record<string, ProfileLite>; onFinalize: (id: string, status: "approved" | "rejected", extra: { payout_mpesa_code?: string; admin_note?: string }) => Promise<void>; }) {
+function WithdrawalsTab({ withdrawals, profiles, settings, onFinalize }: { withdrawals: WithdrawalRow[]; profiles: Record<string, ProfileLite>; settings: AppSettingsRow | null; onFinalize: (id: string, status: "approved" | "rejected", extra: { payout_mpesa_code?: string; admin_note?: string }) => Promise<void>; }) {
   const [filter, setFilter] = useState<WithdrawalStatus>("pending");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<WithdrawalRow | null>(null);

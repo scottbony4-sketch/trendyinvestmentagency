@@ -20,6 +20,7 @@ function LoginPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) return toast.error(error.message);
+
     toast.success("Welcome back!");
     navigate({ to: "/dashboard" });
   };

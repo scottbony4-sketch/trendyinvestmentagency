@@ -1,14 +1,14 @@
+import { resolveSiteUrl as resolveSiteUrlHelper } from "./site-url-helper.js";
+
+export function resolveSiteUrl(options?: {
+  env?: Record<string, string | undefined>;
+  location?: { origin?: string };
+}) {
+  return resolveSiteUrlHelper(options as never);
+}
+
 export function getSiteUrl() {
-  const configuredSiteUrl = (import.meta.env.VITE_SITE_URL || "").trim();
-  if (configuredSiteUrl) {
-    return configuredSiteUrl.replace(/\/+$/, "");
-  }
-
-  if (typeof window !== "undefined" && window.location?.origin) {
-    return window.location.origin;
-  }
-
-  return "";
+  return resolveSiteUrl();
 }
 
 export function getResetPasswordRedirectUrl() {

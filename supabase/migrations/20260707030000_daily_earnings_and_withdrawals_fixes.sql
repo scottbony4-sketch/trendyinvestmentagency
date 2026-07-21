@@ -125,7 +125,7 @@ BEGIN
   today_date := (now() AT TIME ZONE 'Africa/Nairobi')::date;
 
   FOR row_record IN
-    SELECT de.id, de.investment_id, de.user_id, de.earning_date, de.amount, i.start_at, i.plan_id
+    SELECT de.id, de.investment_id, de.user_id, de.earning_date, de.amount, i.start_at, i.plan_id, i.duration_days, i.unlock_day
     FROM public.daily_earnings de
     JOIN public.investments i ON i.id = de.investment_id
     WHERE de.added_to_balance = FALSE
@@ -134,14 +134,13 @@ BEGIN
       AND i.status IN ('active', 'completed')
   LOOP
     start_date := (row_record.start_at AT TIME ZONE 'Africa/Nairobi')::date;
-    plan_duration := COALESCE((SELECT duration_days FROM public.investment_plans WHERE id = row_record.plan_id), 0);
-
-    unlock_day := CASE
+    plan_duration := COALESCE(row_record.duration_days, (SELECT duration_days FROM public.investment_plans WHERE id = row_record.plan_id), 0);
+    unlock_day := COALESCE(row_record.unlock_day, CASE
       WHEN plan_duration <= 7 THEN 1
-      WHEN plan_duration <= 17 THEN 10
-      WHEN plan_duration <= 28 THEN 21
+      WHEN plan_duration <= 17 THEN 8
+      WHEN plan_duration <= 28 THEN 22
       ELSE 1
-    END;
+    END);
 
     IF today_date >= start_date + (unlock_day - 1) THEN
       UPDATE public.daily_earnings
@@ -263,10 +262,17 @@ DECLARE
   min_w numeric;
   open_over boolean;
   is_sunday boolean;
+  available_balance numeric;
 BEGIN
   SELECT min_withdrawal, withdrawals_open_override INTO min_w, open_over FROM public.app_settings WHERE id = 1;
   IF NEW.amount < COALESCE(min_w, 20) THEN
     RAISE EXCEPTION 'Minimum withdrawal is KSh %', COALESCE(min_w, 20);
+  END IF;
+
+  SELECT COALESCE(balance, 0) INTO available_balance FROM public.profiles WHERE id = NEW.user_id;
+
+  IF COALESCE(available_balance, 0) < NEW.amount THEN
+    RAISE EXCEPTION 'Your available balance is not enough for this withdrawal.';
   END IF;
 
   is_sunday := (EXTRACT(ISODOW FROM (now() AT TIME ZONE 'Africa/Nairobi')) = 7);
