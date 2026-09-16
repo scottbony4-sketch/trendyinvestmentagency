@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getWithdrawalUnlockDate, getWithdrawalUnlockState, aggregateInvestmentEarnings, getWithdrawalAvailabilityReason, calculateInvestmentPlanMetrics, summarizePortfolioBalance, getAvailableWithdrawalBalance } from "./investment-withdrawal.js";
+import { getWithdrawalUnlockDate, getWithdrawalUnlockState, aggregateInvestmentEarnings, getWithdrawalAvailabilityReason, calculateInvestmentPlanMetrics, summarizePortfolioBalance, getAvailableWithdrawalBalance, getPlanProgress } from "./investment-withdrawal.js";
 
 test("uses the activation day for 7-day plans", () => {
   const start = "2026-07-01T00:00:00Z";
@@ -81,4 +81,9 @@ test("returns a clear reason for blocked withdrawal", () => {
 test("uses the profile balance as the withdrawable amount", () => {
   const available = getAvailableWithdrawalBalance(500, [{ withdrawable: 200, locked: 100, isUnlocked: false }]);
   assert.equal(available, 500);
+});
+
+test("calculates progress from the plan duration when end date is missing", () => {
+  const progress = getPlanProgress("2026-07-01T00:00:00Z", null, 7, new Date("2026-07-04T00:00:00Z"));
+  assert.equal(progress, 43);
 });

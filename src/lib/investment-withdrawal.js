@@ -131,6 +131,25 @@ export function getAvailableWithdrawalBalance(profileBalance = 0) {
   return Math.max(0, Number(profileBalance || 0));
 }
 
+export function getPlanProgress(startAt, endAt, durationDays, now = new Date()) {
+  const startMs = startAt ? Date.parse(startAt) : Number.NaN;
+  if (!Number.isFinite(startMs)) return 0;
+
+  const duration = Math.max(1, Number(durationDays || 0));
+  const fallbackEndMs = startMs + duration * 86400000;
+  const endMs = endAt ? Date.parse(endAt) : fallbackEndMs;
+
+  if (!Number.isFinite(endMs)) return 0;
+
+  const total = endMs - startMs;
+  if (total <= 0) return 100;
+
+  const elapsed = now.getTime() - startMs;
+  if (elapsed <= 0) return 0;
+
+  return Math.min(100, Math.max(0, Math.round((elapsed / total) * 100)));
+}
+
 export function getWithdrawalAvailabilityReason(balance, minWithdrawalAmount, investmentMetrics = []) {
   const availableBalance = Number(balance || 0);
   const minimum = Number(minWithdrawalAmount || 0);

@@ -7,6 +7,7 @@ import { fmt } from "@/lib/auth";
 import { getSiteUrl } from "@/lib/site-url";
 import { sendAccountStatusEmail, sendDepositApprovedEmail, sendDepositRejectedEmail, sendWithdrawalApprovedEmail, sendWithdrawalRejectedEmail, sendWithdrawalPaidEmail } from "@/lib/api/email.functions";
 import { generateDailyEarnings, releaseUnlockedEarnings } from "@/lib/api/earnings.functions";
+import { buildReferralAnalytics } from "@/lib/referral-analytics";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -68,6 +69,21 @@ function nairobiWeekday(): number {
   const s = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Nairobi", weekday: "short" }).format(new Date());
   const map: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 };
   return map[s] ?? 1;
+}
+
+function getFriendlyErrorMessage(error: { message?: string } | null, fallback = "The request could not be completed.") {
+  if (!error?.message) return fallback;
+  const message = error.message.toLowerCase();
+
+  if (message.includes("invalid input syntax for type bigint") || message.includes("type bigint") || message.includes("invalid input syntax")) {
+    return "Approval failed because the database transaction reference is misconfigured. Please contact support to fix the database trigger.";
+  }
+
+  if (message.includes("permission denied") || message.includes("row level security") || message.includes("policy")) {
+    return "You do not have permission to perform this action.";
+  }
+
+  return error.message;
 }
 
 function AdminPage() {
@@ -161,13 +177,19 @@ function AdminPage() {
 
   const updateDeposit = async (id: string, status: "approved" | "rejected") => {
     const { data: current, error: fetchErr } = await supabase.from("deposits").select("status").eq("id", id).maybeSingle();
-    if (fetchErr) return toast.error(fetchErr.message);
+    if (fetchErr) {
+      toast.error(getFriendlyErrorMessage(fetchErr, "Unable to load deposit status."));
+      return;
+    }
     if (current?.status === status) {
       toast.success(`Deposit already ${status}`);
       return;
     }
     const { error } = await supabase.from("deposits").update({ status }).eq("id", id);
-    if (error) return toast.error(error.message);
+    if (error) {
+      toast.error(getFriendlyErrorMessage(error, `Unable to ${status} deposit.`));
+      return;
+    }
     toast.success(`Deposit ${status}`);
     if (status === "approved") void sendDepositApprovedEmail({ data: { depositId: id } }).catch(() => {});
     if (status === "rejected") void sendDepositRejectedEmail({ data: { depositId: id } }).catch(() => {});
@@ -241,6 +263,12 @@ function AdminPage() {
   const pendingDeposits = deposits.filter(d => d.status === "pending").length;
   const pendingWithdrawals = withdrawals.filter(w => w.status === "pending").length;
   const pendingInvestments = investments.filter(i => i.status === "pending").length;
+  const referralAnalytics = useMemo(() => buildReferralAnalytics({
+    referrals,
+    profiles: profileList,
+    investments,
+    investmentPlans,
+  }), [referrals, profileList, investments, investmentPlans]);
 
   const depositsTotalPages = Math.max(1, Math.ceil(deposits.length / depositsRowsPerPage));
   const safeDepositsPage = Math.min(depositsPage, depositsTotalPages);
@@ -524,7 +552,47 @@ function AdminPage() {
       )}
 
       {tab === "referrals" && (
-        <ReferralsTab referrals={referrals} profiles={profiles} deposits={deposits} onApprove={updateReferral} onReject={updateReferral} onMarkPaid={markReferralPaid} />
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-border/60 bg-card p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-bold">Referral link analytics</h3>
+                <p className="mt-1 text-sm text-muted-foreground">See how many users joined through each referral code, which plans they chose, and the total invested amount.</p>
+              </div>
+            </div>
+            <div className="mt-4 overflow-x-auto rounded-2xl border border-border/60">
+              <table className="w-full text-sm">
+                <thead className="bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3">Referrer</th>
+                    <th className="px-4 py-3">Referral code</th>
+                    <th className="px-4 py-3">Joined users</th>
+                    <th className="px-4 py-3">Plans</th>
+                    <th className="px-4 py-3">Total invested</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {referralAnalytics.length === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">No referral activity yet.</td></tr>}
+                  {referralAnalytics.map((row) => (
+                    <tr key={row.referrerId ?? row.referralCode ?? "unknown"} className="border-t border-border/40">
+                      <td className="px-4 py-3">
+                        <div className="font-medium">{row.referrerName || "Unknown"}</div>
+                        <div className="text-xs text-muted-foreground">{row.referrerId?.slice(0, 8) || "—"}</div>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs">{row.referralCode || "—"}</td>
+                      <td className="px-4 py-3 font-semibold">{row.joinedUsers}</td>
+                      <td className="px-4 py-3">
+                        {row.planNames.length > 0 ? <div className="flex flex-wrap gap-1">{row.planNames.map((plan) => <span key={plan} className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">{plan}</span>)}</div> : <span className="text-muted-foreground">No investments yet</span>}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-emerald-400">KES {fmt(row.totalInvestedAmount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <ReferralsTab referrals={referrals} profiles={profiles} deposits={deposits} onApprove={updateReferral} onReject={updateReferral} onMarkPaid={markReferralPaid} />
+        </div>
       )}
 
       {tab === "earnings" && (

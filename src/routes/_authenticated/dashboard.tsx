@@ -4,7 +4,7 @@ import { Coins, Wallet, TrendingUp, ArrowDownToLine, ArrowUpFromLine, Users, Tim
 import { supabase } from "@/integrations/supabase/client";
 import { fmt } from "@/lib/auth";
 import { generateDailyEarnings, releaseUnlockedEarnings } from "@/lib/api/earnings.functions";
-import { aggregateInvestmentEarnings, calculateInvestmentPlanMetrics, getWithdrawalUnlockDate, summarizePortfolioBalance } from "@/lib/investment-withdrawal";
+import { aggregateInvestmentEarnings, calculateInvestmentPlanMetrics, getPlanProgress, getWithdrawalUnlockDate, summarizePortfolioBalance } from "@/lib/investment-withdrawal";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — TRENDY INVESTMENT AGENCY" }] }),
@@ -45,11 +45,14 @@ function toNairobiDateKey(date: Date | string | number = new Date()) {
   return new Date(date).toLocaleDateString("en-CA", { timeZone: "Africa/Nairobi" });
 }
 
-function remaining(endAt: string | null) {
-  if (!endAt) return { pct: 0, text: "—" };
-  const end = new Date(endAt).getTime();
+function remaining(startAt: string | null, endAt: string | null, durationDays: number | null) {
+  const startMs = startAt ? new Date(startAt).getTime() : Number.NaN;
+  const fallbackEndMs = Number.isFinite(startMs) ? startMs + Math.max(1, Number(durationDays || 0)) * 86400000 : Number.NaN;
+  const endMs = endAt ? new Date(endAt).getTime() : fallbackEndMs;
+
+  if (!Number.isFinite(endMs)) return { pct: 0, text: "—" };
   const now = Date.now();
-  const diff = end - now;
+  const diff = endMs - now;
   if (diff <= 0) return { pct: 100, text: "Matured" };
   const d = Math.floor(diff / 86400000);
   const h = Math.floor((diff % 86400000) / 3600000);
@@ -57,13 +60,8 @@ function remaining(endAt: string | null) {
   return { pct: -1, text: `${d}d ${h}h ${m}m` };
 }
 
-function progressPct(startAt: string, endAt: string | null) {
-  if (!endAt) return 0;
-  const s = new Date(startAt).getTime();
-  const e = new Date(endAt).getTime();
-  const total = e - s;
-  if (total <= 0) return 100;
-  return Math.min(100, Math.max(0, Math.round(((Date.now() - s) / total) * 100)));
+function progressPct(startAt: string, endAt: string | null, durationDays: number | null) {
+  return getPlanProgress(startAt, endAt, durationDays, new Date());
 }
 
 function Dashboard() {
@@ -149,6 +147,8 @@ function Dashboard() {
     let nextEarningDate: string | null = null;
     let status = "Active Mining";
 
+    let totalDuration = 0;
+
     for (const inv of activeCycles) {
       const duration = Math.max(1, Number(inv.duration_days || 1));
       const metrics = calculateInvestmentPlanMetrics({
@@ -174,9 +174,11 @@ function Dashboard() {
       dailyAmount += cycleDailyAmount;
       completedDays += elapsedDays;
       daysRemaining += Math.max(0, duration - elapsedDays);
-      progress = duration > 0 ? Math.round((completedDays / (activeCycles.length * duration)) * 100) : 0;
+      totalDuration += duration;
       if (!nextEarningDate && cycleNext) nextEarningDate = cycleNext;
     }
+
+    progress = totalDuration > 0 ? Math.round((completedDays / totalDuration) * 100) : 0;
 
     return {
       todayEarning,
@@ -323,8 +325,8 @@ function Dashboard() {
         ) : (
           <div className="mt-4 grid gap-3 md:grid-cols-2">
             {investments.slice(0, 6).map(i => {
-              const pct = progressPct(i.start_at, i.end_at);
-              const rem = remaining(i.end_at);
+              const pct = progressPct(i.start_at, i.end_at, i.duration_days);
+              const rem = remaining(i.start_at, i.end_at, i.duration_days);
               const label = MINING_STATUS_LABEL[i.status] ?? i.status;
               return (
                 <div key={i.id} className="rounded-2xl border border-border/60 bg-card p-5">
