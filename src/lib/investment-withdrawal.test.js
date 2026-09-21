@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getWithdrawalUnlockDate, getWithdrawalUnlockState, aggregateInvestmentEarnings, getWithdrawalAvailabilityReason, calculateInvestmentPlanMetrics, summarizePortfolioBalance, getAvailableWithdrawalBalance, getPlanProgress } from "./investment-withdrawal.js";
+import { getWithdrawalUnlockDate, getWithdrawalUnlockState, aggregateInvestmentEarnings, getWithdrawalAvailabilityReason, calculateInvestmentPlanMetrics, calculateWithdrawalFee, summarizePortfolioBalance, getAvailableWithdrawalBalance, getPlanProgress } from "./investment-withdrawal.js";
 
 test("uses the activation day for 7-day plans", () => {
   const start = "2026-07-01T00:00:00Z";
@@ -86,4 +86,41 @@ test("uses the profile balance as the withdrawable amount", () => {
 test("calculates progress from the plan duration when end date is missing", () => {
   const progress = getPlanProgress("2026-07-01T00:00:00Z", null, 7, new Date("2026-07-04T00:00:00Z"));
   assert.equal(progress, 43);
+});
+
+test("locks a 90-day principal until the maturity date", () => {
+  assert.equal(getWithdrawalUnlockDate("2026-07-06T00:00:00Z", 90), "2026-10-03");
+  assert.equal(getWithdrawalUnlockState("2026-07-06T00:00:00Z", 90, new Date("2026-10-02T12:00:00Z")).isUnlocked, false);
+  assert.equal(getWithdrawalUnlockState("2026-07-06T00:00:00Z", 90, new Date("2026-10-03T12:00:00Z")).isUnlocked, true);
+});
+
+test("calculates the USD withdrawal fee without rounding the requested amount", () => {
+  assert.deepEqual(calculateWithdrawalFee(100, 1), { fee: 1, netAmount: 99 });
+});
+
+test("uses the USD 20% weekly profit and 7-day accrual model for Bronze", () => {
+  const metrics = calculateInvestmentPlanMetrics({ amount: 100, roiPercent: 20, durationDays: 90 });
+  assert.equal(metrics.weeklyProfit, 20);
+  assert.equal(metrics.dailyEarning, 20 / 7);
+  assert.equal(metrics.completeCycles, 12);
+  assert.equal(metrics.remainingDays, 6);
+  assert.equal(metrics.totalProfit, 257.14);
+});
+
+test("uses the USD 20% weekly profit and 7-day accrual model for Silver", () => {
+  const metrics = calculateInvestmentPlanMetrics({ amount: 250, roiPercent: 20, durationDays: 90 });
+  assert.equal(metrics.weeklyProfit, 50);
+  assert.equal(metrics.dailyEarning, 50 / 7);
+  assert.equal(metrics.completeCycles, 12);
+  assert.equal(metrics.remainingDays, 6);
+  assert.equal(metrics.totalProfit, 642.86);
+});
+
+test("uses the USD 20% weekly profit and 7-day accrual model for Gold", () => {
+  const metrics = calculateInvestmentPlanMetrics({ amount: 500, roiPercent: 20, durationDays: 90 });
+  assert.equal(metrics.weeklyProfit, 100);
+  assert.equal(metrics.dailyEarning, 100 / 7);
+  assert.equal(metrics.completeCycles, 12);
+  assert.equal(metrics.remainingDays, 6);
+  assert.equal(metrics.totalProfit, 1285.71);
 });

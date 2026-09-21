@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { LayoutDashboard, ArrowDownToLine, ArrowUpFromLine, Shield, LogOut, Sparkles, Users, Receipt, User as UserIcon, Bell } from "lucide-react";
+import { LayoutDashboard, ArrowDownToLine, ArrowUpFromLine, Shield, LogOut, Sparkles, Users, Receipt, User as UserIcon, Bell, Menu, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 
@@ -45,9 +45,6 @@ function AuthenticatedLayout() {
   return (
     <div className="min-h-screen bg-background text-foreground">
       <Nav isAdmin={isAdmin} email={user.email ?? ""} unread={unread} />
-      <main className="mx-auto max-w-6xl px-6 py-8">
-        <Outlet />
-      </main>
     </div>
   );
 }
@@ -55,6 +52,9 @@ function AuthenticatedLayout() {
 function Nav({ isAdmin, email, unread }: { isAdmin: boolean; email: string; unread: number }) {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [desktopCollapsed, setDesktopCollapsed] = useState(false);
+
   const items = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/invest", label: "Invest", icon: Sparkles },
@@ -66,74 +66,153 @@ function Nav({ isAdmin, email, unread }: { isAdmin: boolean; email: string; unre
     ...(isAdmin ? [{ to: "/admin", label: "Admin", icon: Shield }] : []),
   ] as const;
 
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
+
   const logout = async () => {
     await supabase.auth.signOut();
     navigate({ to: "/" });
   };
 
-  const [mobileOpen, setMobileOpen] = useState(false);
-
   return (
-    <header className="sticky top-0 z-40 border-b border-border/40 bg-background/85 backdrop-blur-xl">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-6 py-3">
-        <Link to="/dashboard" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[image:var(--gradient-gold)] font-black text-primary-foreground">T</div>
-          <span className="font-bold tracking-wide">TRENDY INVESTMENT AGENCY</span>
-        </Link>
+    <div className="flex min-h-screen flex-col lg:flex-row">
+      <div
+        className={`fixed inset-0 z-30 bg-slate-950/75 backdrop-blur-[2px] transition-opacity duration-200 lg:hidden ${mobileOpen ? "opacity-100" : "pointer-events-none opacity-0"}`}
+        onClick={() => setMobileOpen(false)}
+        aria-hidden={!mobileOpen}
+      />
 
-        {/* Desktop nav (visible on large screens) */}
-        <nav className="hidden lg:flex flex-1 items-center justify-start gap-4 overflow-x-auto">
-          {items.map(({ to, label, icon: Icon }) => (
-            <Link
-              key={to}
-              to={to}
-              className={`inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors ${pathname === to ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`}>
-              <Icon className="h-4 w-4 lg:h-5 lg:w-5" />
-              <span className="hidden lg:inline">{label}</span>
-            </Link>
-          ))}
-        </nav>
-
-        <div className="flex items-center gap-3">
-          <Link to="/notifications" className="relative inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground">
-            <Bell className="h-4 w-4" />
-            {unread > 0 && (
-              <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">{unread > 9 ? "9+" : unread}</span>
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 flex w-[min(88vw,22rem)] max-w-[22rem] flex-col overflow-hidden border-r border-border/60 bg-[linear-gradient(180deg,rgba(15,23,42,0.98),rgba(15,23,42,0.92))] shadow-[12px_0_40px_rgba(2,6,23,0.28)] backdrop-blur-xl transition-all duration-300 ease-in-out supports-[padding:max(0px)]:pb-[env(safe-area-inset-bottom)] lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 ${
+          mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
+        } ${desktopCollapsed ? "lg:max-w-[88px] lg:w-[88px]" : "lg:max-w-[280px] lg:w-[280px]"}`}
+      >
+        <div className={`flex items-center justify-between border-b border-border/60 bg-white/[0.03] px-4 py-4 sm:px-5 ${desktopCollapsed ? "lg:px-2" : "lg:px-5"}`}>
+          <Link to="/dashboard" className={`flex items-center ${desktopCollapsed ? "lg:justify-center lg:mx-auto" : "gap-3"}`}>
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[image:var(--gradient-gold)] text-lg font-black text-primary-foreground shadow-[0_12px_30px_rgba(234,179,8,0.35)]">T</div>
+            {!desktopCollapsed && (
+              <div className="flex flex-col">
+                <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-muted-foreground">Agency</span>
+                <span className="text-sm font-bold tracking-[0.12em] text-foreground">TRENDY</span>
+              </div>
             )}
           </Link>
 
-          <span className="hidden text-xs text-muted-foreground lg:inline">{email}</span>
-
-          <button onClick={logout} className="hidden sm:inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm font-medium hover:bg-secondary">
-            <LogOut className="h-4 w-4" /> <span className="hidden sm:inline">Log out</span>
+          <button
+            type="button"
+            onClick={() => setDesktopCollapsed((value) => !value)}
+            className="hidden h-9 w-9 items-center justify-center rounded-lg border border-border/60 bg-slate-900/70 text-muted-foreground hover:text-foreground lg:inline-flex"
+            aria-label={desktopCollapsed ? "Expand navigation" : "Collapse navigation"}
+          >
+            {desktopCollapsed ? <Menu className="h-4 w-4" /> : <X className="h-4 w-4" />}
           </button>
 
-          {/* Mobile hamburger */}
-          <button onClick={() => setMobileOpen(v => !v)} aria-label="Open menu" className="md:hidden inline-flex items-center justify-center rounded-md p-2 border border-border">
-            <svg className="h-5 w-5 text-muted-foreground" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" aria-hidden="true">
-              {mobileOpen ? <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /> : <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />}
-            </svg>
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground lg:hidden"
+            aria-label="Close navigation"
+          >
+            <X className="h-4 w-4" />
           </button>
         </div>
+
+        <nav className={`flex-1 space-y-1 overflow-y-auto px-3 py-5 sm:space-y-2 sm:px-4 ${desktopCollapsed ? "lg:px-2" : "lg:px-3"}`}>
+          {items.map(({ to, label, icon: Icon }) => {
+            const active = pathname === to;
+            return (
+              <Link
+                key={to}
+                to={to}
+                onClick={() => setMobileOpen(false)}
+                className={`group flex min-h-12 items-center gap-3 rounded-2xl px-3 py-3.5 text-sm font-medium transition-all active:scale-[0.99] ${
+                  desktopCollapsed ? "justify-center px-2" : ""
+                } ${
+                  active
+                    ? "bg-primary/15 text-primary shadow-[inset_0_0_0_1px_rgba(234,179,8,0.22),0_8px_24px_rgba(234,179,8,0.08)]"
+                    : "text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
+                }`}
+                title={desktopCollapsed ? label : undefined}
+              >
+                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${active ? "bg-primary/15 text-primary" : "bg-slate-900/80 text-muted-foreground group-hover:text-foreground"}`}>
+                  <Icon className="h-4 w-4" />
+                </span>
+                {!desktopCollapsed && <span>{label}</span>}
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className={`border-t border-border/60 bg-white/[0.025] px-3 py-4 sm:px-4 ${desktopCollapsed ? "lg:p-2" : "lg:p-4"}`}>
+          {!desktopCollapsed ? (
+            <div className="mb-3 flex items-center gap-3 rounded-2xl border border-white/10 bg-slate-900/70 p-3.5">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/14 text-sm font-bold text-primary">
+                {email.charAt(0).toUpperCase() || "U"}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-semibold text-foreground">{email}</div>
+                <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Member</div>
+              </div>
+            </div>
+          ) : (
+            <div className="mb-2 flex justify-center">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/14 text-sm font-bold text-primary">
+                {email.charAt(0).toUpperCase() || "U"}
+              </div>
+            </div>
+          )}
+
+          <div className={`flex items-center ${desktopCollapsed ? "justify-center" : "gap-2"}`}>
+            <Link to="/notifications" className={`relative inline-flex items-center justify-center rounded-xl border border-white/10 bg-slate-900/70 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground ${desktopCollapsed ? "h-10 w-10" : "h-12 w-12"}`}>
+              <Bell className="h-4 w-4" />
+              {unread > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">{unread > 9 ? "9+" : unread}</span>
+              )}
+            </Link>
+
+            {!desktopCollapsed && (
+              <button onClick={logout} className="inline-flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-white/10 bg-slate-900/70 px-3 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground">
+                <LogOut className="h-4 w-4" />
+                Log out
+              </button>
+            )}
+          </div>
+        </div>
+      </aside>
+
+      <div className="flex min-h-screen flex-1 flex-col">
+        <header className="sticky top-0 z-30 border-b border-border/60 bg-background/70 backdrop-blur-xl">
+          <div className="flex items-center justify-between px-3 py-3.5 sm:px-6 sm:py-4">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setMobileOpen(true)}
+                aria-label="Open navigation"
+                className="inline-flex h-11 w-11 items-center justify-center rounded-xl border border-border/60 bg-card text-muted-foreground shadow-sm transition-colors hover:bg-secondary hover:text-foreground lg:hidden"
+              >
+                <Menu className="h-4 w-4" />
+              </button>
+
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-muted-foreground">Portfolio</p>
+                <h1 className="mt-1 text-lg font-bold text-foreground sm:text-xl">Overview</h1>
+              </div>
+            </div>
+
+            <Link to="/notifications" className="relative inline-flex h-10 w-10 items-center justify-center rounded-lg border border-border/50 bg-card text-muted-foreground hover:bg-secondary hover:text-foreground">
+              <Bell className="h-4 w-4" />
+              {unread > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">{unread > 9 ? "9+" : unread}</span>
+              )}
+            </Link>
+          </div>
+        </header>
+
+        <main className="mx-auto w-full max-w-6xl min-w-0 px-3 py-5 sm:px-6 sm:py-8 lg:px-8">
+          <Outlet />
+        </main>
       </div>
-
-      {/* Mobile menu dropdown */}
-      {mobileOpen && (
-        <div className="mobile-menu md:hidden">
-          <ul className="flex flex-col gap-1">
-            {items.map(({ to, label, icon: Icon }) => (
-              <li key={to}>
-                <Link to={to} onClick={() => setMobileOpen(false)} className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium ${pathname === to ? "bg-primary/15 text-primary" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`}>
-                  <Icon className="h-4 w-4" /> {label}
-                </Link>
-              </li>
-            ))}
-            <li>
-              <button onClick={logout} className="w-full text-left rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-secondary">Log out</button>
-            </li>
-          </ul>
-        </div>
-      )}
-    </header>
+    </div>
   );
 }

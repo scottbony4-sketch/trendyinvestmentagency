@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { WhatsAppInline } from "@/components/WhatsAppSupport";
+import { buildReferralLink, normalizeReferralCode } from "@/lib/referral";
 import { getSiteUrl } from "@/lib/site-url";
 
 export const Route = createFileRoute("/signup")({
@@ -26,8 +27,6 @@ function SignupPage() {
   });
   const [loading, setLoading] = useState(false);
 
-  const normalizeReferralCode = (value: string) => value.trim().toUpperCase();
-
   const validateReferralCode = async (value: string) => {
     const normalizedCode = normalizeReferralCode(value);
     if (!normalizedCode) return { ok: true, normalizedCode };
@@ -36,26 +35,40 @@ function SignupPage() {
       const { data, error } = await supabase.rpc("validate_referral_code", {
         p_code: normalizedCode,
       });
-      if (error) {
-        console.error("[signup] referral validation failed", {
+
+      if (!error) {
+        const profile = Array.isArray(data) ? data[0] : data;
+        if (profile?.id) {
+          return { ok: true, normalizedCode, referrerId: profile.id };
+        }
+      } else {
+        console.warn("[signup] RPC validation failed; falling back to profile lookup", {
           message: error.message,
           code: error.code,
-          details: error.details,
-          hint: error.hint,
           normalizedCode,
         });
+      }
+
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("referral_code", normalizedCode)
+        .is("deleted_at", null)
+        .maybeSingle();
+
+      if (fallbackError) {
+        console.error("[signup] referral validation query failed", fallbackError);
         return {
           ok: false,
           message: "We couldn't verify the referral code right now. Please try again.",
         };
       }
 
-      const profile = Array.isArray(data) ? data[0] : data;
-      if (!profile?.id) {
-        return { ok: false, message: "Invalid referral code" };
+      if (!fallbackData?.id) {
+        return { ok: false, message: "Invalid referral code. Please check the invite code and try again." };
       }
 
-      return { ok: true, normalizedCode, referrerId: profile.id };
+      return { ok: true, normalizedCode, referrerId: fallbackData.id };
     } catch (error) {
       console.error("[signup] referral validation error", error);
       return {
@@ -149,6 +162,11 @@ function SignupPage() {
             }
             placeholder="ABCD1234"
           />
+          <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs text-muted-foreground">
+            {form.referral_code
+              ? `Your invite code is ${form.referral_code}. You&apos;ll earn rewards when friends join.`
+              : "Use a referral code from a friend to start earning rewards."}
+          </div>
           <button
             disabled={loading}
             className="w-full rounded-md bg-[image:var(--gradient-gold)] px-4 py-3 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-gold)] disabled:opacity-60"

@@ -3,27 +3,25 @@ import { Link } from "@tanstack/react-router";
 import { Download, Coins, TrendingUp, ShieldCheck, Sparkles } from "lucide-react";
 import heroTeam from "@/assets/hero-team.jpg";
 import { WhatsAppFab, WhatsAppInline } from "@/components/WhatsAppSupport";
+import { fmt } from "@/lib/auth";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "TRENDY INVESTMENT AGENCY — Mine coins. Earn shillings." },
-      { name: "description", content: "Join TRENDY INVESTMENT AGENCY, run mining cycles from 7 to 28 days and convert your mined coins into Kenyan shillings — straight to M-Pesa." },
+      { title: "TRENDY INVESTMENT AGENCY — USD investment plans" },
+      { name: "description", content: "Choose a fixed Bronze, Silver, or Gold USD investment plan with 20% weekly profit over 90 days." },
       { property: "og:title", content: "TRENDY INVESTMENT AGENCY" },
-      { property: "og:description", content: "Mining cycles from 7 to 28 days. Earn 40%, 80% or 130% total return, straight to M-Pesa." },
+      { property: "og:description", content: "Fixed USD investment plans with 20% weekly profit and a 90-day term." },
     ],
   }),
   component: Index,
 });
 
 const PLANS = [
-  { amount: 250, seven: 350, seventeen: 450, twentyeight: 575 },
-  { amount: 500, seven: 700, seventeen: 900, twentyeight: 1150 },
-  { amount: 1000, seven: 1400, seventeen: 1800, twentyeight: 2300 },
-  { amount: 5000, seven: 7000, seventeen: 9000, twentyeight: 11500 },
-  { amount: 10000, seven: 14000, seventeen: 18000, twentyeight: 23000 },
+  { name: "Bronze", amount: 100, daily: 20 / 7, weekly: 20, profit: 257.14, color: "#CD7F32" },
+  { name: "Silver", amount: 250, daily: 50 / 7, weekly: 50, profit: 642.86, color: "#94A3B8" },
+  { name: "Gold", amount: 500, daily: 100 / 7, weekly: 100, profit: 1285.71, color: "#EAB308" },
 ];
-const fmt = (n: number) => n.toLocaleString("en-KE");
 
 function Index() {
   return (
@@ -71,14 +69,14 @@ function Hero() {
       <div className="mx-auto grid max-w-7xl items-center gap-12 px-6 py-20 lg:grid-cols-2 lg:py-28">
         <div>
           <span className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-            <Sparkles className="h-3.5 w-3.5" /> Mining cycles: 7 · 17 · 28 days
+            <Sparkles className="h-3.5 w-3.5" /> Fixed USD plans · 90-day term
           </span>
           <h1 className="mt-6 text-5xl font-bold leading-[1.05] tracking-tight sm:text-6xl">
-            Mine coins.<br />
-            <span className="bg-[image:var(--gradient-gold)] bg-clip-text text-transparent">Earn shillings.</span>
+            Invest in USD.<br />
+            <span className="bg-[image:var(--gradient-gold)] bg-clip-text text-transparent">Grow with clarity.</span>
           </h1>
           <p className="mt-6 max-w-lg text-base text-muted-foreground sm:text-lg">
-            TRENDY INVESTMENT AGENCY runs your mining cycle for you. Deposit via M-Pesa, watch your progress live, and get your projected mining payout the moment your cycle matures.
+            Choose one fixed USD plan, earn 20% of your original principal every 7 calendar days, and unlock your principal at the end of the 90-day term.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Link to="/signup" className="inline-flex items-center justify-center rounded-md bg-[image:var(--gradient-gold)] px-6 py-3 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-gold)] transition-transform hover:scale-[1.03]">Get started</Link>
@@ -98,9 +96,9 @@ function Hero() {
 
 function Features() {
   const items = [
-    { icon: Coins, title: "Whole shillings, whole days", body: "Choose from KSh 250 to KSh 10,000 and pick your mining cycle: 7, 17 or 28 days." },
-    { icon: TrendingUp, title: "40%, 80% or 130% total return", body: "Each cycle pays your invested amount plus 40%, 80% or 130% — straight to your balance on maturity." },
-    { icon: ShieldCheck, title: "Admin-secured M-Pesa", body: "Every deposit and withdrawal is verified manually so your money moves only when you say so." },
+    { icon: Coins, title: "Three fixed USD plans", body: "Choose Bronze at $100, Silver at $250, or Gold at $500. Deposits cannot be lower or higher than the selected plan." },
+    { icon: TrendingUp, title: "20% weekly profit", body: "Profit is calculated from your original principal every 7 calendar days, without compounding." },
+    { icon: ShieldCheck, title: "Locked principal", body: "Your principal remains locked for 90 days, then becomes available for withdrawal or explicit reinvestment." },
   ];
   return (
     <section className="mx-auto max-w-7xl px-6 pb-20">
@@ -125,7 +123,7 @@ function About() {
           About <span className="text-primary">TRENDY INVESTMENT AGENCY</span>
         </h2>
         <p className="mt-6 text-base text-muted-foreground sm:text-lg">
-          TRENDY INVESTMENT AGENCY is a Kenyan digital mining platform built for everyday earners. We make crypto mining simple, transparent and profitable — no rigs, no electricity bills, no jargon. Members buy in from KSh 250, run a fully-managed 7, 17 or 28-day mining cycle and receive their projected mining payout the moment the cycle matures.
+          TRENDY INVESTMENT AGENCY offers simple USD investment plans with fixed deposits, 20% weekly profit, daily accrual, and a 90-day maturity period. Your original principal is never compounded and is unlocked only when the investment matures.
         </p>
       </div>
     </section>
@@ -136,26 +134,22 @@ function Plans() {
   return (
     <section id="plans" className="mx-auto max-w-7xl px-6 py-20">
       <div className="text-center">
-        <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Mining plans</h2>
-        <p className="mt-3 text-muted-foreground">Pick your investment amount and your mining cycle.</p>
+        <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">Investment plans</h2>
+        <p className="mt-3 text-muted-foreground">Fixed USD deposits. 20% weekly profit. 90-day maturity.</p>
       </div>
       <div className="mt-12 overflow-x-auto rounded-2xl border border-border/60 bg-card">
         <table className="w-full text-sm">
           <thead className="bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="px-4 py-3">Investment</th>
-              <th className="px-4 py-3">7 days · 40%</th>
-              <th className="px-4 py-3">17 days · 80%</th>
-              <th className="px-4 py-3">28 days · 130%</th>
-            </tr>
+            <tr><th className="px-4 py-3">Plan</th><th className="px-4 py-3">Deposit</th><th className="px-4 py-3">Daily accrual</th><th className="px-4 py-3">Weekly profit</th><th className="px-4 py-3">90-day profit</th></tr>
           </thead>
           <tbody>
             {PLANS.map(p => (
-              <tr key={p.amount} className="border-t border-border/40">
-                <td className="px-4 py-4 font-semibold">KSh {fmt(p.amount)}</td>
-                <td className="px-4 py-4 text-primary">KSh {fmt(p.seven)}</td>
-                <td className="px-4 py-4 text-primary">KSh {fmt(p.seventeen)}</td>
-                <td className="px-4 py-4 text-primary">KSh {fmt(p.twentyeight)}</td>
+              <tr key={p.name} className="border-t border-border/40">
+                <td className="px-4 py-4 font-semibold" style={{ color: p.color }}>{p.name}</td>
+                <td className="px-4 py-4 font-semibold">{fmt(p.amount)}</td>
+                <td className="px-4 py-4 text-primary">{fmt(p.daily)}</td>
+                <td className="px-4 py-4 text-primary">{fmt(p.weekly)}</td>
+                <td className="px-4 py-4 text-primary">{fmt(p.profit)}</td>
               </tr>
             ))}
           </tbody>

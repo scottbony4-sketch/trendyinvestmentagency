@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { Sparkles, TrendingUp, Crown, Sprout } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { fmt } from "@/lib/auth";
+import { calculateInvestmentPlanMetrics } from "@/lib/investment-withdrawal";
 import { sendMiningCycleStartedEmail } from "@/lib/api/email.functions";
 
 export const Route = createFileRoute("/_authenticated/invest")({
@@ -20,11 +21,17 @@ type Plan = {
 
 type PaymentMethod = "mpesa" | "balance";
 
+const USD_PLAN_NAMES = {
+  bronze: "BRONZE",
+  silver: "SILVER",
+  gold: "GOLD",
+};
+
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   sprout: Sprout, "trending-up": TrendingUp, crown: Crown, sparkles: Sparkles,
 };
 
-const AMOUNT_TIERS = [250, 500, 1000, 5000, 10000];
+const AMOUNT_TIERS = [100, 250, 500];
 
 function getPlanRoi(plan: Pick<Plan, "roi_percent" | "daily_return_percent" | "duration_days">) {
   return Number(plan.roi_percent ?? plan.daily_return_percent * plan.duration_days);
@@ -47,12 +54,13 @@ function InvestPage() {
   const navigate = useNavigate();
   const [plans, setPlans] = useState<Plan[]>([]);
   const [selected, setSelected] = useState<Plan | null>(null);
-  const [amount, setAmount] = useState<number>(250);
+  const [amount, setAmount] = useState<number>(100);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("mpesa");
   const [balance, setBalance] = useState(0);
   const [mpesaCode, setMpesaCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     void Promise.all([
@@ -76,10 +84,9 @@ function InvestPage() {
   const projected = useMemo(() => {
     if (!selected || !amount) return null;
     const roi = getPlanRoi(selected);
-    const payout = Math.floor(amount * (1 + roi / 100));
-    const profit = payout - amount;
+    const metrics = calculateInvestmentPlanMetrics({ amount, roiPercent: roi, durationDays: selected.duration_days });
     const endAt = new Date(Date.now() + selected.duration_days * 86400_000);
-    return { roi, payout, profit, endAt };
+    return { roi, payout: metrics.totalReturn, profit: metrics.totalProfit, daily: metrics.dailyEarning, weekly: metrics.weeklyProfit, endAt };
   }, [selected, amount]);
 
   const amountValid = selected ? amount >= Number(selected.min_amount) && (selected.max_amount === null || amount <= Number(selected.max_amount)) : false;
@@ -90,14 +97,21 @@ function InvestPage() {
     if (!selected) return;
     setError(null);
     if (!amountValid) {
-      return toast.error(`Minimum for ${selected.name} is KSh ${fmt(selected.min_amount)}`);
+      return toast.error(`Minimum for ${selected.name} is ${fmt(selected.min_amount)}`);
     }
     if (paymentMethod === "balance" && !balanceAvailable) {
       setError("Your available balance is not enough for this mining plan.");
       return toast.error("Your available balance is not enough for this mining plan.");
     }
 
+    setConfirming(true);
+  };
+
+  const confirmInvestment = async () => {
+    if (!selected) return;
+
     if (paymentMethod === "mpesa") {
+      setConfirming(false);
       navigate({ to: "/deposit", search: { amount, plan: selected.id } });
       return;
     }
@@ -108,13 +122,14 @@ function InvestPage() {
         const { data: investmentId, error: rpcError } = await supabase.rpc("create_balance_investment", { _plan_id: selected.id, _amount: amount });
         if (rpcError) throw rpcError;
         if (investmentId) void sendMiningCycleStartedEmail({ data: { investmentId: String(investmentId) } }).catch(() => {});
-        toast.success("Mining cycle started from your available balance.");
+        toast.success("Investment started from your available balance.");
+        setConfirming(false);
         setMpesaCode("");
-        setAmount(Math.max(250, Number(selected.min_amount)));
+        setAmount(Number(selected.min_amount));
         const { data: profileData } = await supabase.from("profiles").select("balance").maybeSingle();
         if (profileData) setBalance(Math.floor(Number(profileData.balance ?? 0)));
       } catch (error: any) {
-        const message = error?.message || "Unable to start mining cycle.";
+        const message = error?.message || "Unable to start investment.";
         setError(message);
         toast.error(message);
       } finally {
@@ -127,14 +142,13 @@ function InvestPage() {
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold">Choose your mining plan</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Pick a mining cycle and choose how to invest.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Choose a fixed USD plan and select how to invest.</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
         {plans.map(p => {
           const Icon = ICONS[p.icon] ?? Sparkles;
           const active = selected?.id === p.id;
-          const roi = getPlanRoi(p);
           return (
             <button key={p.id} type="button" onClick={() => { setSelected(p); setAmount(getDefaultAmount(p)); }}
               className={`rounded-2xl border p-6 text-left transition-all hover:-translate-y-1 ${active ? "border-primary bg-primary/10 shadow-[var(--shadow-gold)]" : "border-border/60 bg-card"}`}>
@@ -147,11 +161,11 @@ function InvestPage() {
               <div className="mt-4 text-lg font-bold">{p.name}</div>
               <div className="text-sm text-muted-foreground">{p.description}</div>
               <div className="mt-4 flex items-baseline gap-2">
-                <span className="text-2xl font-black text-primary">{Math.round(roi)}%</span>
-                <span className="text-xs text-muted-foreground">total return</span>
+                <span className="text-2xl font-black text-primary">20%</span>
+                <span className="text-xs text-muted-foreground">weekly profit</span>
               </div>
               <div className="mt-2 text-xs text-muted-foreground">
-                KSh {fmt(p.min_amount)} – KSh {p.max_amount ? fmt(p.max_amount) : "∞"}
+                {fmt(p.min_amount)} – {p.max_amount ? fmt(p.max_amount) : "∞"}
               </div>
             </button>
           );
@@ -161,7 +175,7 @@ function InvestPage() {
       {selected && (
         <div className="grid gap-4 rounded-2xl border border-border/60 bg-card p-6 sm:grid-cols-2">
           <div>
-            <label className="text-sm font-medium">Investment amount (KSh)</label>
+            <label className="text-sm font-medium">Investment amount (USD)</label>
             <div className="mt-2 grid grid-cols-5 gap-2">
               {getPlanAmountTiers(selected).map(a => (
                 <button type="button" key={a} onClick={() => setAmount(a)}
@@ -173,15 +187,16 @@ function InvestPage() {
             <input type="number" step="1" min={Number(selected.min_amount)} max={selected.max_amount ?? undefined}
               value={amount || ""} onChange={(e) => setAmount(Math.floor(Number(e.target.value)) || 0)}
               className="mt-2 block w-full rounded-md border border-border bg-background px-3 py-2 text-lg font-bold focus:border-primary focus:outline-none" />
-            <div className="mt-2 text-xs text-muted-foreground">Whole numbers only · Min KSh {fmt(selected.min_amount)} · Max KSh {selected.max_amount ? fmt(selected.max_amount) : "∞"}</div>
+            <div className="mt-2 text-xs text-muted-foreground">Fixed plan amount · {fmt(selected.min_amount)}</div>
           </div>
 
           <div className="space-y-2 text-sm">
             <Row label="Plan" value={selected.name} />
-            <Row label="Duration" value={`${selected.duration_days} days mining cycle`} />
-            <Row label="Return" value={projected ? `${Math.round(projected.roi)}%` : "—"} />
-            <Row label="Projected mining payout" value={projected ? `KSh ${fmt(projected.payout)}` : "—"} accent />
-            <Row label="Profit" value={projected ? `KSh ${fmt(projected.profit)}` : "—"} />
+            <Row label="Term" value={`${selected.duration_days} days`} />
+            <Row label="Daily accrual" value={projected ? fmt(projected.daily) : "—"} />
+            <Row label="Weekly profit" value={projected ? fmt(projected.weekly) : "—"} />
+            <Row label="90-day profit" value={projected ? fmt(projected.profit) : "—"} accent />
+            <Row label="Principal" value="Locked until maturity" />
             <Row label="End date" value={projected ? projected.endAt.toLocaleDateString() : "—"} />
           </div>
 
@@ -202,7 +217,7 @@ function InvestPage() {
             <div className="mt-4 space-y-3">
               <div className="rounded-xl border border-border/60 bg-white/80 p-4 text-sm">
                 <div className="font-semibold">Available balance</div>
-                <div className="mt-1 text-lg font-bold">KES {fmt(balance)}</div>
+                <div className="mt-1 text-lg font-bold">{fmt(balance)}</div>
                 {paymentMethod === "balance" && !balanceAvailable && (
                   <div className="mt-2 text-sm text-red-500">Your available balance is not enough for this mining plan.</div>
                 )}
@@ -210,13 +225,13 @@ function InvestPage() {
 
               {paymentMethod === "mpesa" && (
                 <div className="rounded-xl border border-primary/40 bg-primary/5 p-4 text-sm">
-                  After confirming the selected plan, you will be redirected to the M-Pesa deposit flow and the mining cycle will start only after admin approval.
+                  After confirming the selected plan, you will be redirected to the M-Pesa deposit flow and the investment will start only after admin approval.
                 </div>
               )}
 
               {paymentMethod === "balance" && (
                 <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
-                  Your available balance will be deducted immediately and the mining cycle will start right away at 0% progress.
+                  Your available balance will be deducted immediately and the investment will start right away at 0% progress.
                 </div>
               )}
             </div>
@@ -226,6 +241,26 @@ function InvestPage() {
               {loading ? "Processing…" : paymentMethod === "mpesa" ? "Continue to M-Pesa" : "Invest from Available Balance"}
             </button>
             {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+          </div>
+        </div>
+      )}
+
+      {confirming && selected && projected && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="confirm-investment-title">
+          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
+            <h2 id="confirm-investment-title" className="text-xl font-bold">Confirm Investment</h2>
+            <div className="mt-4 space-y-2 text-sm">
+              <Row label="Plan" value={selected.name} />
+              <Row label="Deposit" value={fmt(amount)} />
+              <Row label="Weekly profit" value={fmt(projected.weekly)} />
+              <Row label="Daily accrual" value={fmt(projected.daily)} />
+              <Row label="Term" value="90 days" />
+              <Row label="Principal" value="Locked until maturity" />
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button type="button" onClick={() => setConfirming(false)} className="rounded-md border border-border px-4 py-2 text-sm font-semibold">Cancel</button>
+              <button type="button" onClick={() => void confirmInvestment()} disabled={loading} className="rounded-md bg-[image:var(--gradient-gold)] px-4 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60">Confirm Investment</button>
+            </div>
           </div>
         </div>
       )}

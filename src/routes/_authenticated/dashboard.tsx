@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { fmt } from "@/lib/auth";
 import { generateDailyEarnings, releaseUnlockedEarnings } from "@/lib/api/earnings.functions";
 import { aggregateInvestmentEarnings, calculateInvestmentPlanMetrics, getPlanProgress, getWithdrawalUnlockDate, summarizePortfolioBalance } from "@/lib/investment-withdrawal";
+import { DataTablePagination } from "@/components/ui/data-table-pagination";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — TRENDY INVESTMENT AGENCY" }] }),
@@ -74,6 +75,8 @@ function Dashboard() {
   const [dailyEarnings, setDailyEarnings] = useState<DailyEarningRow[]>([]);
   const [recent, setRecent] = useState<Tx[]>([]);
   const [tick, setTick] = useState(0);
+  const [earningPage, setEarningPage] = useState(1);
+  const [earningRowsPerPage, setEarningRowsPerPage] = useState(10);
 
   const refresh = useCallback(async () => {
     try { await supabase.rpc("mature_investments"); } catch { /* ignore */ }
@@ -205,22 +208,38 @@ function Dashboard() {
   const portfolioBalance = summarizePortfolioBalance(profile?.balance ?? 0, investmentSummaries);
   const availableBalance = portfolioBalance.availableBalance;
 
+  const sortedDailyEarnings = useMemo(
+    () => [...dailyEarnings].sort((a, b) => (a.earning_date < b.earning_date ? 1 : -1)),
+    [dailyEarnings],
+  );
+  const earningTotalPages = Math.max(1, Math.ceil(sortedDailyEarnings.length / earningRowsPerPage));
+  const safeEarningPage = Math.min(earningPage, earningTotalPages);
+  const visibleDailyEarnings = sortedDailyEarnings.slice((safeEarningPage - 1) * earningRowsPerPage, safeEarningPage * earningRowsPerPage);
+
+  useEffect(() => {
+    setEarningPage(1);
+  }, [earningRowsPerPage]);
+
+  useEffect(() => {
+    if (earningPage > earningTotalPages) setEarningPage(earningTotalPages);
+  }, [earningPage, earningTotalPages]);
+
   return (
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl font-bold">Welcome back{profile?.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""} 👋</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Your mining cycles, mined balance and portfolio at a glance.</p>
+        <p className="mt-1 text-sm text-muted-foreground">Your investments, available balance, locked principal, and profit at a glance.</p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat icon={Wallet} label="Available balance" value={`KSh ${fmt(Math.floor(availableBalance))}`} accent />
-        <Stat icon={Coins} label="Active mining (locked)" value={`KSh ${fmt(activeMining)}`} sub={`${active.length} cycle${active.length===1?"":"s"}`} />
-        <Stat icon={TrendingUp} label="Projected payouts" value={`KSh ${fmt(projectedTotal)}`} sub="From active cycles" />
-        <Stat icon={CheckCircle2} label="Matured cycles" value={String(matured.length)} sub={`Mined KSh ${fmt(claims)}`} />
-        <Stat icon={ArrowDownToLine} label="Total deposits" value={`KSh ${fmt(totalDeposits)}`} sub={pendingDeposits ? `${pendingDeposits} pending` : undefined} />
-        <Stat icon={ArrowUpFromLine} label="Total withdrawals" value={`KSh ${fmt(totalWithdrawals)}`} sub={pendingWithdrawals ? `${pendingWithdrawals} pending` : undefined} />
-        <Stat icon={Users} label="Referral earnings" value={`KSh ${fmt(refEarn)}`} />
-        <Stat icon={Timer} label="Next maturity" value={nextMature ? remaining(active.find(a=>a.id===nextMature.id)?.end_at ?? null).text : "—"} sub={nextMature ? `KSh ${fmt(nextMature.amount)}` : "No active cycle"} />
+        <Stat icon={Wallet} label="Available balance" value={fmt(availableBalance)} accent />
+        <Stat icon={Coins} label="Locked principal" value={fmt(activeMining)} sub={`${active.length} investment${active.length===1?"":"s"}`} />
+        <Stat icon={TrendingUp} label="Projected returns" value={fmt(projectedTotal)} sub="From active investments" />
+        <Stat icon={CheckCircle2} label="Matured investments" value={String(matured.length)} sub={`Profit paid ${fmt(claims)}`} />
+        <Stat icon={ArrowDownToLine} label="Total deposits" value={fmt(totalDeposits)} sub={pendingDeposits ? `${pendingDeposits} pending` : undefined} />
+        <Stat icon={ArrowUpFromLine} label="Total withdrawals" value={fmt(totalWithdrawals)} sub={pendingWithdrawals ? `${pendingWithdrawals} pending` : undefined} />
+        <Stat icon={Users} label="Referral earnings" value={fmt(refEarn)} />
+        <Stat icon={Timer} label="Next maturity" value={nextMature ? remaining(active.find(a=>a.id===nextMature.id)?.end_at ?? null).text : "—"} sub={nextMature ? fmt(nextMature.amount) : "No active investment"} />
       </div>
 
       {dailySummary && (
@@ -228,17 +247,17 @@ function Dashboard() {
           <div className="flex items-end justify-between gap-3">
             <div>
               <h2 className="text-xl font-semibold">Daily earning</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Real earnings from your active mining cycles in Africa/Nairobi time.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Profit accrual from your active investments in Africa/Nairobi time.</p>
             </div>
             <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">{dailySummary.status}</span>
           </div>
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <Metric label="Today’s earning" value={`KSh ${fmt(dailySummary.todayEarning)}`} />
-            <Metric label="Total expected profit" value={`KSh ${fmt(dailySummary.totalExpectedProfit)}`} />
-            <Metric label="Total expected return" value={`KSh ${fmt(dailySummary.totalExpectedReturn)}`} />
-            <Metric label="Earnings received" value={`KSh ${fmt(dailySummary.totalEarned)}`} />
-            <Metric label="Remaining return" value={`KSh ${fmt(dailySummary.totalRemaining)}`} />
-            <Metric label="Daily earning amount" value={`KSh ${fmt(dailySummary.dailyAmount)}`} />
+            <Metric label="Today’s earning" value={fmt(dailySummary.todayEarning)} />
+            <Metric label="Total expected profit" value={fmt(dailySummary.totalExpectedProfit)} />
+            <Metric label="Total expected return" value={fmt(dailySummary.totalExpectedReturn)} />
+            <Metric label="Earnings received" value={fmt(dailySummary.totalEarned)} />
+            <Metric label="Remaining return" value={fmt(dailySummary.totalRemaining)} />
+            <Metric label="Daily earning amount" value={fmt(dailySummary.dailyAmount)} />
             <Metric label="Days completed" value={String(dailySummary.completedDays)} />
             <Metric label="Days remaining" value={String(dailySummary.daysRemaining)} />
             <Metric label="Mining progress" value={`${dailySummary.progress}%`} />
@@ -248,35 +267,47 @@ function Dashboard() {
       )}
 
       <section>
-        <div className="flex items-end justify-between">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <h2 className="text-xl font-semibold">Daily earning history</h2>
-          <Link to="/transactions" className="text-sm text-primary hover:underline">View transactions</Link>
+          <Link to="/transactions" className="text-sm font-medium text-primary hover:underline">View transactions</Link>
         </div>
-        {dailyEarnings.length === 0 ? (
+        {sortedDailyEarnings.length === 0 ? (
           <p className="mt-3 text-sm text-muted-foreground">No daily earning activity yet.</p>
         ) : (
-          <div className="mt-4 overflow-x-auto rounded-2xl border border-border/60">
-            <table className="w-full text-sm">
-              <thead className="bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">Mining plan</th><th className="px-4 py-3">Investment</th><th className="px-4 py-3">Daily earning</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Added to balance</th></tr>
-              </thead>
-              <tbody>
-                {dailyEarnings.map(row => {
-                  const investment = investments.find(i => i.id === row.investment_id);
-                  const planLabel = investment ? `${investment.duration_days} Days Plan` : "Mining cycle";
-                  return (
-                    <tr key={row.id} className="border-t border-border/40">
-                      <td className="px-4 py-3 text-muted-foreground">{row.earning_date}</td>
-                      <td className="px-4 py-3">{planLabel}</td>
-                      <td className="px-4 py-3">KSh {fmt(Number(investment?.plan_amount ?? 0))}</td>
-                      <td className="px-4 py-3 font-medium">KSh {fmt(row.amount)}</td>
-                      <td className="px-4 py-3 capitalize">{row.status}</td>
-                      <td className="px-4 py-3">{row.added_to_balance ? "Yes" : "No"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="mt-4 overflow-hidden rounded-2xl border border-border/60 bg-card">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">Mining plan</th><th className="px-4 py-3">Investment</th><th className="px-4 py-3">Daily earning</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Added to balance</th></tr>
+                </thead>
+                <tbody>
+                  {visibleDailyEarnings.map(row => {
+                    const investment = investments.find(i => i.id === row.investment_id);
+                    const planLabel = investment ? `${investment.duration_days} Days Plan` : "Investment";
+                    return (
+                      <tr key={row.id} className="border-t border-border/40">
+                        <td className="px-4 py-3 text-muted-foreground">{row.earning_date}</td>
+                        <td className="px-4 py-3">{planLabel}</td>
+                        <td className="px-4 py-3">{fmt(Number(investment?.plan_amount ?? 0))}</td>
+                        <td className="px-4 py-3 font-medium">{fmt(row.amount)}</td>
+                        <td className="px-4 py-3 capitalize">{row.status}</td>
+                        <td className="px-4 py-3">{row.added_to_balance ? "Yes" : "No"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <DataTablePagination
+              page={safeEarningPage}
+              totalPages={earningTotalPages}
+              rowsPerPage={earningRowsPerPage}
+              onPageChange={setEarningPage}
+              onRowsPerPageChange={setEarningRowsPerPage}
+              totalItems={sortedDailyEarnings.length}
+              startIndex={(safeEarningPage - 1) * earningRowsPerPage}
+              endIndex={Math.min(safeEarningPage * earningRowsPerPage, sortedDailyEarnings.length)}
+            />
           </div>
         )}
       </section>
@@ -302,9 +333,9 @@ function Dashboard() {
                   </span>
                 </div>
                 <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
-                  <div>Accumulated: KSh {fmt(inv.accumulated)}</div>
-                  <div>Withdrawable: KSh {fmt(inv.withdrawable)}</div>
-                  <div>Locked: KSh {fmt(inv.locked)}</div>
+                  <div>Accrued profit: {fmt(inv.accumulated)}</div>
+                  <div>Paid profit: {fmt(inv.withdrawable)}</div>
+                  <div>Locked profit: {fmt(inv.locked)}</div>
                 </div>
                 <div className="mt-2 text-xs text-muted-foreground">Next earning: {inv.nextEarningDate ? new Date(`${inv.nextEarningDate}T00:00:00Z`).toLocaleDateString() : "—"}</div>
               </div>
@@ -320,7 +351,7 @@ function Dashboard() {
         </div>
         {investments.length === 0 ? (
           <div className="mt-4 rounded-2xl border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
-            No mining cycles yet. <Link to="/invest" className="text-primary hover:underline">Start mining →</Link>
+            No investments yet. <Link to="/invest" className="text-primary hover:underline">Start investing →</Link>
           </div>
         ) : (
           <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -333,8 +364,8 @@ function Dashboard() {
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <div className="text-xs uppercase text-muted-foreground">{i.duration_days} days · {Math.round(Number(i.roi_percent))}% return</div>
-                      <div className="mt-1 text-lg font-bold">KSh {fmt(i.plan_amount)}</div>
-                      <div className="text-xs text-primary">Projected payout: KSh {fmt(i.projected_payout)}</div>
+                      <div className="mt-1 text-lg font-bold">{fmt(i.plan_amount)}</div>
+                      <div className="text-xs text-primary">Projected return: {fmt(i.projected_payout)}</div>
                     </div>
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusColor(i.status)}`}>{label}</span>
                   </div>
@@ -377,7 +408,7 @@ function Dashboard() {
                   </div>
                 </div>
                 <div className={`text-sm font-semibold ${t.type === "withdrawal" ? "text-red-400" : "text-emerald-400"}`}>
-                  {t.type === "withdrawal" ? "−" : "+"}KSh {fmt(t.amount)}
+                  {t.type === "withdrawal" ? "−" : "+"}{fmt(t.amount)}
                 </div>
               </li>
             ))}

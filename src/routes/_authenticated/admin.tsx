@@ -111,6 +111,10 @@ function AdminPage() {
   const [depositsRowsPerPage, setDepositsRowsPerPage] = useState(10);
   const [logPage, setLogPage] = useState(1);
   const [logRowsPerPage, setLogRowsPerPage] = useState(10);
+  const [emailLogsPage, setEmailLogsPage] = useState(1);
+  const [emailLogsRowsPerPage, setEmailLogsRowsPerPage] = useState(10);
+  const [referralAnalyticsPage, setReferralAnalyticsPage] = useState(1);
+  const [referralAnalyticsRowsPerPage, setReferralAnalyticsRowsPerPage] = useState(10);
 
   const refresh = useCallback(async () => {
     const [d, w, i, p, plans, a, r, de, s, emailLogsResult, tx, ur] = await Promise.all([
@@ -276,6 +280,15 @@ function AdminPage() {
   const logTotalPages = Math.max(1, Math.ceil(actions.length / logRowsPerPage));
   const safeLogPage = Math.min(logPage, logTotalPages);
   const visibleActions = actions.slice((safeLogPage - 1) * logRowsPerPage, safeLogPage * logRowsPerPage);
+  const emailLogsTotalPages = Math.max(1, Math.ceil(emailLogs.length / emailLogsRowsPerPage));
+  const safeEmailLogsPage = Math.min(emailLogsPage, emailLogsTotalPages);
+  const visibleEmailLogs = emailLogs.slice((safeEmailLogsPage - 1) * emailLogsRowsPerPage, safeEmailLogsPage * emailLogsRowsPerPage);
+  const referralAnalyticsTotalPages = Math.max(1, Math.ceil(referralAnalytics.length / referralAnalyticsRowsPerPage));
+  const safeReferralAnalyticsPage = Math.min(referralAnalyticsPage, referralAnalyticsTotalPages);
+  const visibleReferralAnalytics = referralAnalytics.slice(
+    (safeReferralAnalyticsPage - 1) * referralAnalyticsRowsPerPage,
+    safeReferralAnalyticsPage * referralAnalyticsRowsPerPage,
+  );
 
   useEffect(() => {
     setDepositsPage(1);
@@ -293,7 +306,23 @@ function AdminPage() {
     if (logPage > logTotalPages) setLogPage(logTotalPages);
   }, [logPage, logTotalPages]);
 
-  const formatMoney = (value: number | string | null | undefined) => Math.round(Number(value ?? 0)).toLocaleString("en-KE");
+  useEffect(() => {
+    setEmailLogsPage(1);
+  }, [emailLogsRowsPerPage]);
+
+  useEffect(() => {
+    if (emailLogsPage > emailLogsTotalPages) setEmailLogsPage(emailLogsTotalPages);
+  }, [emailLogsPage, emailLogsTotalPages]);
+
+  useEffect(() => {
+    setReferralAnalyticsPage(1);
+  }, [referralAnalyticsRowsPerPage]);
+
+  useEffect(() => {
+    if (referralAnalyticsPage > referralAnalyticsTotalPages) setReferralAnalyticsPage(referralAnalyticsTotalPages);
+  }, [referralAnalyticsPage, referralAnalyticsTotalPages]);
+
+  const formatMoney = (value: number | string | null | undefined) => Number(value ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const matchesMoneyRange = useCallback((value?: string | null) => {
     if (!value) return true;
@@ -404,13 +433,13 @@ function AdminPage() {
   const moneyCards = [
     { key: "totalDeposited", label: "Total Deposited", value: moneyData.approvedDepositsTotal, tone: "green", icon: ArrowDownToLine, helper: "Approved M-Pesa deposits only" },
     { key: "totalWithdrawn", label: "Total Withdrawn", value: moneyData.paidWithdrawalsTotal, tone: "red", icon: ArrowUpFromLine, helper: "Paid withdrawals only" },
-    { key: "totalInvested", label: "Total Invested", value: moneyData.totalInvested, tone: "blue", icon: Coins, helper: "Mining cycles started" },
+    { key: "totalInvested", label: "Total Invested", value: moneyData.totalInvested, tone: "blue", icon: Coins, helper: "Investments started" },
     { key: "totalReinvested", label: "Total Reinvested", value: moneyData.totalReinvested, tone: "blue", icon: TrendingUp, helper: "From available balance" },
     { key: "totalAvailableBalance", label: "Total Available User Balance", value: moneyData.totalAvailableBalance, tone: "green", icon: Wallet, helper: "Current withdrawable balance" },
     { key: "totalLockedEarnings", label: "Total Locked Earnings", value: moneyData.totalLockedEarnings, tone: "gold", icon: Lock, helper: "Unlocked later by plan rules" },
-    { key: "totalActiveMiningCapital", label: "Total Active Mining Capital", value: moneyData.totalActiveMiningCapital, tone: "blue", icon: BarChart3, helper: "Locked in active cycles" },
-    { key: "totalProjectedMiningPayouts", label: "Total Projected Mining Payouts", value: moneyData.totalProjectedMiningPayouts, tone: "gold", icon: CircleDollarSign, helper: "Active and pending cycles" },
-    { key: "totalCompletedMiningPayouts", label: "Total Completed Mining Payouts", value: moneyData.totalCompletedMiningPayouts, tone: "gold", icon: BadgeCheck, helper: "Completed cycle payouts" },
+    { key: "totalActiveMiningCapital", label: "Total Active Investment Capital", value: moneyData.totalActiveMiningCapital, tone: "blue", icon: BarChart3, helper: "Locked in active investments" },
+    { key: "totalProjectedMiningPayouts", label: "Total Projected Investment Returns", value: moneyData.totalProjectedMiningPayouts, tone: "gold", icon: CircleDollarSign, helper: "Active and pending investments" },
+    { key: "totalCompletedMiningPayouts", label: "Total Completed Investment Returns", value: moneyData.totalCompletedMiningPayouts, tone: "gold", icon: BadgeCheck, helper: "Completed investment returns" },
     { key: "totalUserProfit", label: "Total User Profit", value: moneyData.totalUserProfit, tone: "gold", icon: TrendingUp, helper: "Projected payout minus investment" },
     { key: "totalDailyEarningsPaid", label: "Total Daily Earnings Paid", value: moneyData.totalDailyEarningsPaid, tone: "green", icon: Coins, helper: "Added to user balances" },
     { key: "totalReferralCommissionPaid", label: "Total Referral Commission Paid", value: moneyData.totalReferralCommissionPaid, tone: "green", icon: Users, helper: "Paid referral rewards" },
@@ -421,8 +450,8 @@ function AdminPage() {
     { key: "totalPendingDeposits", label: "Total Pending Deposits", value: moneyData.pendingDepositsTotal, tone: "grey", icon: Clock3, helper: "Awaiting approval" },
     { key: "totalApprovedDeposits", label: "Total Approved Deposits", value: moneyData.approvedDepositsTotal, tone: "green", icon: BadgeCheck, helper: "Approved and counted" },
     { key: "totalRejectedDeposits", label: "Total Rejected Deposits", value: moneyData.rejectedDepositsTotal, tone: "grey", icon: Clock3, helper: "Not counted as real money" },
-    { key: "totalActiveCyclesValue", label: "Total Active Cycles Value", value: moneyData.totalActiveCyclesValue, tone: "blue", icon: BarChart3, helper: "Projected value of active cycles" },
-    { key: "totalCompletedCyclesValue", label: "Total Completed Cycles Value", value: moneyData.totalCompletedCyclesValue, tone: "blue", icon: BadgeCheck, helper: "Projected value of completed cycles" },
+    { key: "totalActiveCyclesValue", label: "Total Active Investments Value", value: moneyData.totalActiveCyclesValue, tone: "blue", icon: BarChart3, helper: "Projected value of active investments" },
+    { key: "totalCompletedCyclesValue", label: "Total Completed Investments Value", value: moneyData.totalCompletedCyclesValue, tone: "blue", icon: BadgeCheck, helper: "Projected value of completed investments" },
     { key: "totalPlatformProfit", label: "Total Platform Profit", value: moneyData.totalPlatformProfit, tone: "red", icon: CircleDollarSign, helper: "Fee-based platform profit" },
   ];
 
@@ -438,7 +467,7 @@ function AdminPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Admin panel</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Approve deposits and withdrawals, and monitor mining cycles.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Approve deposits and withdrawals, and monitor investments.</p>
       </div>
 
       <div className="flex flex-wrap gap-2 border-b border-border/60">
@@ -482,7 +511,7 @@ function AdminPage() {
                     <tr key={d.id} className="border-t border-border/40">
                       <td className="px-4 py-3 text-muted-foreground">{new Date(d.created_at).toLocaleString()}</td>
                       <td className="px-4 py-3">{p?.full_name || "—"}<div className="text-xs text-muted-foreground">{p?.phone}</div></td>
-                      <td className="px-4 py-3 font-medium">KES {fmt(d.amount)}</td>
+                      <td className="px-4 py-3 font-medium">{fmt(d.amount)}</td>
                       <td className="px-4 py-3 font-mono">{d.mpesa_code}</td>
                       <td className="px-4 py-3"><Badge status={d.status} /></td>
                       <td className="px-4 py-3 text-right">
@@ -535,7 +564,7 @@ function AdminPage() {
                 <tr><th className="px-3 py-2">When</th><th className="px-3 py-2">User</th><th className="px-3 py-2">Subject</th><th className="px-3 py-2">Status</th><th className="px-3 py-2">Event</th></tr>
               </thead>
               <tbody>
-                {emailLogs.map(entry => (
+                {visibleEmailLogs.map(entry => (
                   <tr key={entry.id} className="border-t border-border/40">
                     <td className="px-3 py-2 text-muted-foreground">{new Date(entry.sent_at || entry.created_at).toLocaleString()}</td>
                     <td className="px-3 py-2">{profiles[entry.user_id]?.full_name || entry.user_id?.slice(0, 8) || "—"}</td>
@@ -548,6 +577,16 @@ function AdminPage() {
               </tbody>
             </table>
           </div>
+          <TablePagination
+            page={safeEmailLogsPage}
+            totalPages={emailLogsTotalPages}
+            rowsPerPage={emailLogsRowsPerPage}
+            onPageChange={setEmailLogsPage}
+            onRowsPerPageChange={setEmailLogsRowsPerPage}
+            totalItems={emailLogs.length}
+            startIndex={(safeEmailLogsPage - 1) * emailLogsRowsPerPage}
+            endIndex={Math.min(safeEmailLogsPage * emailLogsRowsPerPage, emailLogs.length)}
+          />
         </div>
       )}
 
@@ -573,7 +612,7 @@ function AdminPage() {
                 </thead>
                 <tbody>
                   {referralAnalytics.length === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">No referral activity yet.</td></tr>}
-                  {referralAnalytics.map((row) => (
+                  {visibleReferralAnalytics.map((row) => (
                     <tr key={row.referrerId ?? row.referralCode ?? "unknown"} className="border-t border-border/40">
                       <td className="px-4 py-3">
                         <div className="font-medium">{row.referrerName || "Unknown"}</div>
@@ -584,12 +623,22 @@ function AdminPage() {
                       <td className="px-4 py-3">
                         {row.planNames.length > 0 ? <div className="flex flex-wrap gap-1">{row.planNames.map((plan) => <span key={plan} className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">{plan}</span>)}</div> : <span className="text-muted-foreground">No investments yet</span>}
                       </td>
-                      <td className="px-4 py-3 font-semibold text-emerald-400">KES {fmt(row.totalInvestedAmount)}</td>
+                      <td className="px-4 py-3 font-semibold text-emerald-400">{fmt(row.totalInvestedAmount)}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            <TablePagination
+              page={safeReferralAnalyticsPage}
+              totalPages={referralAnalyticsTotalPages}
+              rowsPerPage={referralAnalyticsRowsPerPage}
+              onPageChange={setReferralAnalyticsPage}
+              onRowsPerPageChange={setReferralAnalyticsRowsPerPage}
+              totalItems={referralAnalytics.length}
+              startIndex={(safeReferralAnalyticsPage - 1) * referralAnalyticsRowsPerPage}
+              endIndex={Math.min(safeReferralAnalyticsPage * referralAnalyticsRowsPerPage, referralAnalytics.length)}
+            />
           </div>
           <ReferralsTab referrals={referrals} profiles={profiles} deposits={deposits} onApprove={updateReferral} onReject={updateReferral} onMarkPaid={markReferralPaid} />
         </div>
@@ -633,7 +682,7 @@ function AdminPage() {
                     <td className="px-4 py-3 text-muted-foreground">{new Date(a.created_at).toLocaleString()}</td>
                     <td className="px-4 py-3 font-semibold">{a.action}</td>
                     <td className="px-4 py-3">{profiles[a.target_user_id]?.full_name || a.target_user_id.slice(0, 8)}</td>
-                    <td className="px-4 py-3 font-medium">{a.amount != null ? `KES ${fmt(a.amount)}` : "—"}</td>
+                    <td className="px-4 py-3 font-medium">{a.amount != null ? fmt(a.amount) : "—"}</td>
                     <td className="px-4 py-3 text-muted-foreground">{a.note || "—"}</td>
                   </tr>
                 ))}
@@ -917,7 +966,7 @@ function UsersTab({ users, roles, onDone }: { users: ProfileLite[]; roles: Recor
                     <td className="px-4 py-3 font-mono text-xs">{u.phone || "—"}</td>
                     <td className="px-4 py-3"><span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${statusClasses}`}>{state}</span></td>
                     <td className="px-4 py-3 text-xs uppercase tracking-wide text-muted-foreground">{roleList.includes("admin") ? "Admin" : "User"}</td>
-                    <td className="px-4 py-3 font-semibold">KES {fmt(u.balance)}</td>
+                    <td className="px-4 py-3 font-semibold">{fmt(u.balance)}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex justify-end gap-2">
                         <button onClick={() => setSelected(u)} className="rounded-md bg-primary/15 px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/25">Edit</button>
@@ -967,7 +1016,7 @@ function UsersTab({ users, roles, onDone }: { users: ProfileLite[]; roles: Recor
             <input value={form.referral_code} onChange={(e) => setForm({ ...form, referral_code: e.target.value.toUpperCase() })} className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none" placeholder="ABCD1234" />
           </label>
           <label className="block">
-            <span className="text-sm font-medium">Balance (KES)</span>
+            <span className="text-sm font-medium">Balance (USD)</span>
             <input type="number" min="0" value={form.balance} onChange={(e) => setForm({ ...form, balance: e.target.value })} className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none" />
           </label>
           <label className="block">
@@ -1003,7 +1052,7 @@ function UsersTab({ users, roles, onDone }: { users: ProfileLite[]; roles: Recor
                 <button type="button" disabled={busy || !selected} onClick={() => setUserAccountStatus("suspended")} className="rounded-md bg-amber-500/15 px-3 py-2 text-sm font-semibold text-amber-400 hover:bg-amber-500/25 disabled:opacity-60">Suspend</button>
               </div>
               <label className="block">
-                <span className="text-sm font-medium">Amount (KES)</span>
+                <span className="text-sm font-medium">Amount (USD)</span>
                 <input type="number" min="1" value={amount} onChange={(e) => setAmount(e.target.value)} className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none" />
               </label>
               <label className="block">
@@ -1051,7 +1100,8 @@ function UsersTab({ users, roles, onDone }: { users: ProfileLite[]; roles: Recor
 }
 
 function TablePagination({ page, totalPages, rowsPerPage, onPageChange, onRowsPerPageChange, totalItems, startIndex, endIndex }: { page: number; totalPages: number; rowsPerPage: number; onPageChange: (page: number) => void; onRowsPerPageChange: (rowsPerPage: number) => void; totalItems: number; startIndex: number; endIndex: number; }) {
-  const pageNumbers = Array.from({ length: totalPages }, (_, index) => index + 1);
+  const firstVisiblePage = Math.min(Math.max(page - 1, 1), Math.max(totalPages - 2, 1));
+  const pageNumbers = Array.from({ length: Math.min(3, totalPages) }, (_, index) => firstVisiblePage + index);
   return (
     <div className="flex flex-col gap-3 border-t border-border/60 bg-background/50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="text-sm text-muted-foreground">
@@ -1145,7 +1195,7 @@ function InvestmentsTab({ investments, profiles, plans }: {
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search user, plan, amount, status" className="rounded-md border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none" />
         </div>
       </div>
-      <div className="text-xs text-muted-foreground">Total shown: <span className="font-semibold text-foreground">KES {fmt(total)}</span></div>
+      <div className="text-xs text-muted-foreground">Total shown: <span className="font-semibold text-foreground">{fmt(total)}</span></div>
       <div className="overflow-x-auto rounded-2xl border border-border/60">
         <table className="w-full text-sm">
           <thead className="bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -1167,16 +1217,16 @@ function InvestmentsTab({ investments, profiles, plans }: {
                 <tr key={inv.id} className="border-t border-border/40">
                   <td className="px-4 py-3 text-muted-foreground">{new Date(inv.created_at).toLocaleString()}</td>
                   <td className="px-4 py-3">{p?.full_name || "—"}<div className="text-xs text-muted-foreground">{p?.phone}</div></td>
-                  <td className="px-4 py-3 font-medium">KES {fmt(inv.plan_amount)}</td>
+                  <td className="px-4 py-3 font-medium">{fmt(inv.plan_amount)}</td>
                   <td className="px-4 py-3">{plans[inv.plan_id ?? ""] || "—"}</td>
                   <td className="px-4 py-3">{inv.duration_days} days</td>
-                  <td className="px-4 py-3 font-medium">KES {fmt(inv.projected_payout ?? 0)}</td>
+                  <td className="px-4 py-3 font-medium">{fmt(inv.projected_payout ?? 0)}</td>
                   <td className="px-4 py-3 capitalize">{inv.payment_source === "balance" ? "Account Balance" : "M-Pesa"}</td>
                   <td className="px-4 py-3"><Badge status={inv.status} /></td>
                 </tr>
               );
             })}
-            {filtered.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">No mining cycles found.</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">No investments found.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -1276,7 +1326,7 @@ function WithdrawalsTab({ withdrawals, profiles, settings, onFinalize }: { withd
             )}
           </div>
         </div>
-        <div className="text-xs text-muted-foreground">Total shown: <span className="font-semibold text-foreground">KES {fmt(total)}</span></div>
+        <div className="text-xs text-muted-foreground">Total shown: <span className="font-semibold text-foreground">{fmt(total)}</span></div>
 
         <div className="overflow-x-auto rounded-2xl border border-border/60">
           <table className="w-full text-sm">
@@ -1297,9 +1347,9 @@ function WithdrawalsTab({ withdrawals, profiles, settings, onFinalize }: { withd
                 return (
                   <tr key={w.id} className={`border-t border-border/40 ${selected?.id === w.id ? "bg-primary/5" : ""}`}>
                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{new Date(w.created_at).toLocaleString()}</td>
-                    <td className="px-4 py-3">{p?.full_name || "—"}<div className="text-xs text-muted-foreground">Bal: KES {fmt(p?.balance ?? 0)}</div></td>
+                    <td className="px-4 py-3">{p?.full_name || "—"}<div className="text-xs text-muted-foreground">Bal: {fmt(p?.balance ?? 0)}</div></td>
                     <td className="px-4 py-3 font-medium">
-                      KES {fmt(w.amount)}
+                      {fmt(w.amount)}
                       {typeof settings?.withdrawal_fee_percent !== 'undefined' && (
                         (() => {
                           const feeEnabled = settings?.withdrawal_fee_enabled !== false;
@@ -1307,7 +1357,7 @@ function WithdrawalsTab({ withdrawals, profiles, settings, onFinalize }: { withd
                           const fee = Math.floor((Number(w.amount) * feePct) / 100);
                           const netAmount = Math.max(0, Math.floor(Number(w.amount)) - fee);
                           return (
-                            <div className="text-xs text-muted-foreground mt-1">Net: KES {fmt(netAmount)} ({feePct}% fee)</div>
+                            <div className="text-xs text-muted-foreground mt-1">Net: {fmt(netAmount)} ({feePct}% fee)</div>
                           );
                         })()
                       )}
@@ -1329,6 +1379,16 @@ function WithdrawalsTab({ withdrawals, profiles, settings, onFinalize }: { withd
             </tbody>
           </table>
         </div>
+        <TablePagination
+          page={safePage}
+          totalPages={totalPages}
+          rowsPerPage={rowsPerPage}
+          onPageChange={setPage}
+          onRowsPerPageChange={setRowsPerPage}
+          totalItems={filtered.length}
+          startIndex={(safePage - 1) * rowsPerPage}
+          endIndex={Math.min(safePage * rowsPerPage, filtered.length)}
+        />
       </div>
 
       <div className="rounded-2xl border border-border/60 bg-card p-5 h-fit">
@@ -1340,7 +1400,7 @@ function WithdrawalsTab({ withdrawals, profiles, settings, onFinalize }: { withd
             <div className="rounded-md bg-secondary/40 p-3 text-sm space-y-1">
               <div className="flex justify-between"><span className="text-muted-foreground">User</span><span className="font-semibold">{profiles[selected.user_id]?.full_name || "—"}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Send to</span><span className="font-mono">{selected.mpesa_phone}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Amount</span><span className="font-semibold text-primary">KES {fmt(selected.amount)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Amount</span><span className="font-semibold text-primary">{fmt(selected.amount)}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Status</span><Badge status={selected.status} /></div>
             </div>
 
@@ -1422,8 +1482,8 @@ function ReferralsTab({ referrals, profiles, deposits, onApprove, onReject, onMa
                   <td className="px-4 py-3 text-muted-foreground">{new Date(r.created_at).toLocaleString()}</td>
                   <td className="px-4 py-3">{ref?.full_name || r.referrer_id.slice(0,8)}<div className="text-xs text-muted-foreground">{ref?.phone}</div></td>
                   <td className="px-4 py-3">{referred?.full_name || r.referred_id.slice(0,8)}<div className="text-xs text-muted-foreground">{referred?.phone}</div></td>
-                  <td className="px-4 py-3">{dep ? `KES ${fmt(dep.amount)}` : r.deposit_id}</td>
-                  <td className="px-4 py-3 font-medium">KES {fmt(r.amount)}</td>
+                  <td className="px-4 py-3">{dep ? fmt(dep.amount) : r.deposit_id}</td>
+                  <td className="px-4 py-3 font-medium">{fmt(r.amount)}</td>
                   <td className="px-4 py-3"><span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${r.status === 'approved' ? 'bg-emerald-500/15 text-emerald-400' : r.status === 'paid' ? 'bg-primary/15 text-primary' : r.status === 'rejected' ? 'bg-red-500/15 text-red-400' : 'bg-yellow-500/15 text-yellow-400'}`}>{r.status}</span></td>
                   <td className="px-4 py-3 text-right">
                     {r.status === 'pending' && (
@@ -1519,17 +1579,17 @@ function AdminEarningsTab({ earnings, profiles, investments }: { earnings: Daily
             {visibleEarnings.map(row => {
               const profile = profiles[row.user_id];
               const investment = investments.find(inv => inv.id === row.investment_id);
-              const planLabel = investment ? `${investment.duration_days} Days Plan` : "Mining cycle";
+              const planLabel = investment ? `${investment.duration_days} Days Plan` : "Investment";
               const totalForCycle = earnings.filter(e => e.investment_id === row.investment_id).reduce((sum, e) => sum + Number(e.amount), 0);
               const remainingForCycle = Math.max(0, (investment?.projected_payout ?? 0) - Number(investment?.plan_amount ?? 0) - totalForCycle);
               return (
                 <tr key={row.id} className="border-t border-border/40">
                   <td className="px-4 py-3">{profile?.full_name || "—"}<div className="text-xs text-muted-foreground">{profile?.phone}</div></td>
                   <td className="px-4 py-3">{planLabel}</td>
-                  <td className="px-4 py-3">KSh {fmt(Number(investment?.plan_amount ?? 0))}</td>
-                  <td className="px-4 py-3">KSh {fmt(row.amount)}</td>
-                  <td className="px-4 py-3">KSh {fmt(totalForCycle)}</td>
-                  <td className="px-4 py-3">KSh {fmt(remainingForCycle)}</td>
+                  <td className="px-4 py-3">{fmt(Number(investment?.plan_amount ?? 0))}</td>
+                  <td className="px-4 py-3">{fmt(row.amount)}</td>
+                  <td className="px-4 py-3">{fmt(totalForCycle)}</td>
+                  <td className="px-4 py-3">{fmt(remainingForCycle)}</td>
                   <td className="px-4 py-3"><span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${row.status === 'released' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-yellow-500/15 text-yellow-400'}`}>{row.status}</span></td>
                 </tr>
               );
@@ -1617,7 +1677,7 @@ function MoneyFlowAnalyticsTab({ range, setRange, customStart, setCustomStart, c
                 <div className="text-sm font-medium">{card.label}</div>
                 <Icon className="h-4 w-4" />
               </div>
-              <div className="mt-3 text-2xl font-bold">KSh {formatMoney(card.value)}</div>
+              <div className="mt-3 text-2xl font-bold">${formatMoney(card.value)}</div>
               <div className="mt-1 text-xs opacity-80">{card.helper}</div>
             </div>
           );
@@ -1633,7 +1693,7 @@ function MoneyFlowAnalyticsTab({ range, setRange, customStart, setCustomStart, c
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
                 <XAxis dataKey="label" />
                 <YAxis />
-                <Tooltip formatter={(value: number) => `KSh ${formatMoney(value)}`} />
+                <Tooltip formatter={(value: number) => `$${formatMoney(value)}`} />
                 <Bar dataKey="deposits" fill="#10b981" radius={[4, 4, 0, 0]} />
                 <Bar dataKey="withdrawals" fill="#ef4444" radius={[4, 4, 0, 0]} />
               </BarChart>
@@ -1649,7 +1709,7 @@ function MoneyFlowAnalyticsTab({ range, setRange, customStart, setCustomStart, c
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
                 <XAxis dataKey="label" />
                 <YAxis />
-                <Tooltip formatter={(value: number) => `KSh ${formatMoney(value)}`} />
+                <Tooltip formatter={(value: number) => `$${formatMoney(value)}`} />
                 <Bar dataKey="amount" fill="#38bdf8" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -1664,7 +1724,7 @@ function MoneyFlowAnalyticsTab({ range, setRange, customStart, setCustomStart, c
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
                 <XAxis dataKey="label" />
                 <YAxis />
-                <Tooltip formatter={(value: number) => `KSh ${formatMoney(value)}`} />
+                <Tooltip formatter={(value: number) => `$${formatMoney(value)}`} />
                 <Line type="monotone" dataKey="total" stroke="#f59e0b" strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>
@@ -1679,7 +1739,7 @@ function MoneyFlowAnalyticsTab({ range, setRange, customStart, setCustomStart, c
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
                 <XAxis dataKey="label" />
                 <YAxis />
-                <Tooltip formatter={(value: number) => `KSh ${formatMoney(value)}`} />
+                <Tooltip formatter={(value: number) => `$${formatMoney(value)}`} />
                 <Bar dataKey="amount" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -1687,14 +1747,14 @@ function MoneyFlowAnalyticsTab({ range, setRange, customStart, setCustomStart, c
         </div>
 
         <div className="rounded-2xl border border-border/60 bg-card p-4">
-          <div className="mb-3 text-sm font-semibold">Active vs Completed Mining Cycles</div>
+          <div className="mb-3 text-sm font-semibold">Active vs Completed Investments</div>
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={moneyData.cycleBreakdown}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
                 <XAxis dataKey="label" />
                 <YAxis />
-                <Tooltip formatter={(value: number) => `KSh ${formatMoney(value)}`} />
+                <Tooltip formatter={(value: number) => `$${formatMoney(value)}`} />
                 <Bar dataKey="amount" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -1709,7 +1769,7 @@ function MoneyFlowAnalyticsTab({ range, setRange, customStart, setCustomStart, c
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
                 <XAxis dataKey="label" />
                 <YAxis />
-                <Tooltip formatter={(value: number) => `KSh ${formatMoney(value)}`} />
+                <Tooltip formatter={(value: number) => `$${formatMoney(value)}`} />
                 <Line type="monotone" dataKey="amount" stroke="#ef4444" strokeWidth={2} />
               </LineChart>
             </ResponsiveContainer>
@@ -1936,7 +1996,7 @@ function PlansTab({ investments, dailyEarnings, withdrawals, referrals, deposits
                     <div className="font-semibold" style={{ color: p.color || undefined }}>{p.name}</div>
                     <div className="text-xs text-muted-foreground">{p.slug}</div>
                   </td>
-                  <td className="px-4 py-3 text-xs">{p.amount_presets && p.amount_presets.length ? p.amount_presets.join(", ") : `KES ${fmt(p.min_amount)}+`}</td>
+                  <td className="px-4 py-3 text-xs">{p.amount_presets && p.amount_presets.length ? p.amount_presets.join(", ") : `${fmt(p.min_amount)}+`}</td>
                   <td className="px-4 py-3 font-medium">{Math.round(Number(p.roi_percent ?? p.daily_return_percent ?? 0))}%</td>
                   <td className="px-4 py-3">{p.duration_days}</td>
                   <td className="px-4 py-3">{p.unlock_day ?? 1}</td>
@@ -2035,9 +2095,9 @@ function SettingsTab() {
       <section className="rounded-2xl border border-border/60 bg-card p-5 space-y-4">
         <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Money rules</h4>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Min deposit (KES)"><input type="number" value={s.min_deposit} onChange={e => upd("min_deposit", Number(e.target.value))} className={inputCls} /></Field>
-          <Field label="Min withdrawal (KES)"><input type="number" value={s.min_withdrawal} onChange={e => upd("min_withdrawal", Number(e.target.value))} className={inputCls} /></Field>
-          <Field label="Max withdrawal (KES)"><input type="number" value={s.max_withdrawal} onChange={e => upd("max_withdrawal", Number(e.target.value))} className={inputCls} /></Field>
+          <Field label="Min deposit (USD)"><input type="number" value={s.min_deposit} onChange={e => upd("min_deposit", Number(e.target.value))} className={inputCls} /></Field>
+          <Field label="Min withdrawal (USD)"><input type="number" value={s.min_withdrawal} onChange={e => upd("min_withdrawal", Number(e.target.value))} className={inputCls} /></Field>
+          <Field label="Max withdrawal (USD)"><input type="number" value={s.max_withdrawal} onChange={e => upd("max_withdrawal", Number(e.target.value))} className={inputCls} /></Field>
           <Field label="Withdrawal fee %"><input type="number" step="0.01" value={s.withdrawal_fee_percent} onChange={e => upd("withdrawal_fee_percent", Number(e.target.value))} className={inputCls} /></Field>
           <Field label="Referral %"><input type="number" step="0.01" value={s.referral_percent} onChange={e => upd("referral_percent", Number(e.target.value))} className={inputCls} /></Field>
           <Field label="M-Pesa till number"><input value={s.mpesa_till ?? ""} onChange={e => upd("mpesa_till", e.target.value)} className={inputCls} /></Field>

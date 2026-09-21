@@ -18,7 +18,7 @@ export function getWithdrawalUnlockOffset(durationDays) {
   if (days <= 7) return 1;
   if (days <= 17) return 7;
   if (days <= 28) return 21;
-  return 1;
+  return days;
 }
 
 export function getWithdrawalUnlockDate(startAt, durationDays) {
@@ -38,17 +38,52 @@ export function getWithdrawalUnlockState(startAt, durationDays, now = new Date()
   };
 }
 
+export function calculateWithdrawalFee(amount, feePercent = 1) {
+  const withdrawalAmount = Math.max(0, Number(amount || 0));
+  const fee = Number(((withdrawalAmount * Number(feePercent || 0)) / 100).toFixed(2));
+  return { fee, netAmount: Number((withdrawalAmount - fee).toFixed(2)) };
+}
+
 export function calculateInvestmentPlanMetrics({ amount, roiPercent, durationDays }) {
   const principal = Number(amount || 0);
   const percent = Number(roiPercent || 0);
   const duration = Math.max(1, Number(durationDays || 0));
 
-  const totalProfit = Math.round(principal * (percent / 100));
-  const totalReturn = principal + totalProfit;
+  const isWeeklyCycleModel = percent === 20 && duration >= 7;
+
+  if (isWeeklyCycleModel) {
+    const weeklyProfit = principal * (percent / 100);
+    const dailyEarning = weeklyProfit / 7;
+    const completeCycles = Math.floor(duration / 7);
+    const remainingDays = duration % 7;
+    const totalProfit = Number((weeklyProfit * (duration / 7)).toFixed(2));
+    const totalReturn = Number((principal + totalProfit).toFixed(2));
+
+    return {
+      principal,
+      roiPercent: percent,
+      durationDays: duration,
+      weeklyProfit: Number(weeklyProfit.toFixed(2)),
+      dailyEarning,
+      completeCycles,
+      remainingDays,
+      totalProfit,
+      totalReturn,
+      dailyEarningDisplay: Number((weeklyProfit / 7).toFixed(2)),
+      finalDayEarning: Number((dailyEarning * remainingDays || dailyEarning).toFixed(2)),
+      dailySchedule: Array.from({ length: duration }, (_, index) => ({
+        day: index + 1,
+        amount: dailyEarning,
+      })),
+    };
+  }
+
+  const totalProfit = Number((principal * (percent / 100)).toFixed(2));
+  const totalReturn = Number((principal + totalProfit).toFixed(2));
   const baseDaily = Math.floor(totalReturn / duration);
-  const remainder = totalReturn - (baseDaily * duration);
+  const remainder = totalReturn - baseDaily * duration;
   const dailyEarning = baseDaily;
-  const finalDayEarning = dailyEarning + remainder;
+  const finalDayEarning = baseDaily + remainder;
 
   return {
     principal,
@@ -58,9 +93,13 @@ export function calculateInvestmentPlanMetrics({ amount, roiPercent, durationDay
     totalReturn,
     dailyEarning,
     finalDayEarning,
+    weeklyProfit: totalProfit,
+    completeCycles: Math.floor(duration / 7),
+    remainingDays: duration % 7,
+    dailyEarningDisplay: dailyEarning,
     dailySchedule: Array.from({ length: duration }, (_, index) => ({
       day: index + 1,
-      amount: index + 1 === duration ? finalDayEarning : dailyEarning,
+      amount: index === duration - 1 ? finalDayEarning : dailyEarning,
     })),
   };
 }
@@ -162,5 +201,5 @@ export function getWithdrawalAvailabilityReason(balance, minWithdrawalAmount, in
     return "Your available balance is below the minimum withdrawal amount. Earnings from locked plans become withdrawable on their unlock date.";
   }
 
-  return `Minimum withdrawal is KSh ${minimum}.`;
+  return `Minimum withdrawal is ${minimum.toLocaleString("en-US", { style: "currency", currency: "USD" })}.`;
 }

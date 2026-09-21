@@ -4,8 +4,9 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { fmt } from "@/lib/auth";
 import { WhatsAppInline } from "@/components/WhatsAppSupport";
+import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { sendWithdrawalRequestedEmail } from "@/lib/api/email.functions";
-import { aggregateInvestmentEarnings, getAvailableWithdrawalBalance, getWithdrawalAvailabilityReason, getWithdrawalUnlockDate } from "@/lib/investment-withdrawal";
+import { aggregateInvestmentEarnings, calculateWithdrawalFee, getAvailableWithdrawalBalance, getWithdrawalAvailabilityReason, getWithdrawalUnlockDate } from "@/lib/investment-withdrawal";
 
 export const Route = createFileRoute("/_authenticated/withdraw")({
   head: () => ({ meta: [{ title: "Withdraw — TRENDY INVESTMENT AGENCY" }] }),
@@ -34,6 +35,8 @@ function WithdrawPage() {
   const [activeMining, setActiveMining] = useState(0);
   const [investments, setInvestments] = useState<InvestmentSummary[]>([]);
   const [dailyEarnings, setDailyEarnings] = useState<DailyEarningRow[]>([]);
+  const [page, setPage] = useState(1);
+  const [rowsPerPage, setRowsPerPage] = useState(5);
 
   const refresh = async () => {
     const [p, w, s, inv, de] = await Promise.all([
@@ -60,11 +63,10 @@ function WithdrawPage() {
   const override = settings?.withdrawals_open_override;
   const closed = override === false || isSunday;
   const feeEnabled = settings?.withdrawal_fee_enabled !== false;
-  const feePct = feeEnabled ? Number(settings?.withdrawal_fee_percent ?? 20) : 0;
+  const feePct = feeEnabled ? Number(settings?.withdrawal_fee_percent ?? 1) : 0;
   const minW = Math.max(20, Math.floor(Number(settings?.min_withdrawal ?? 20)));
-  const amt = Math.floor(Number(amount) || 0);
-  const fee = Math.floor((amt * feePct) / 100);
-  const net = Math.max(0, amt - fee);
+  const amt = Math.max(0, Number(amount) || 0);
+  const { fee, netAmount: net } = calculateWithdrawalFee(amt, feePct);
   const investmentMetrics = useMemo(() => investments
     .filter((inv) => inv.status === "active")
     .map((inv) => ({
@@ -74,6 +76,17 @@ function WithdrawPage() {
     })), [dailyEarnings, investments]);
   const effectiveBalance = useMemo(() => getAvailableWithdrawalBalance(balance, investmentMetrics), [balance, investmentMetrics]);
   const withdrawalReason = useMemo(() => getWithdrawalAvailabilityReason(effectiveBalance, minW, investmentMetrics), [effectiveBalance, investmentMetrics, minW]);
+  const totalPages = Math.max(1, Math.ceil(withdrawals.length / rowsPerPage));
+  const safePage = Math.min(page, totalPages);
+  const visibleWithdrawals = useMemo(() => withdrawals.slice((safePage - 1) * rowsPerPage, safePage * rowsPerPage), [withdrawals, safePage, rowsPerPage]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [rowsPerPage]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,7 +95,7 @@ function WithdrawPage() {
         ? "Withdrawals are temporarily closed by admin."
         : "Withdrawals are closed on Sundays. Please request withdrawal from Monday to Saturday.");
     }
-    if (!amt || amt < minW) return toast.error(`Minimum withdrawal is KSh ${fmt(minW)}`);
+    if (!amt || amt < minW) return toast.error(`Minimum withdrawal is ${fmt(minW)}`);
     if (withdrawalReason) return toast.error(withdrawalReason);
     if (amt > effectiveBalance) return toast.error("Amount exceeds your balance");
     if (!phone.trim()) return toast.error("Enter your M-Pesa phone");
@@ -108,8 +121,8 @@ function WithdrawPage() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <Stat label="Available balance" value={`KSh ${fmt(Math.floor(effectiveBalance))}`} accent />
-        <Stat label="Active mining (locked)" value={`KSh ${fmt(activeMining)}`} sub="Unlocks on maturity" />
+        <Stat label="Available balance" value={fmt(effectiveBalance)} accent />
+        <Stat label="Locked principal" value={fmt(activeMining)} sub="Unlocks on maturity" />
         <Stat label="Withdrawal window" value={closed ? "Closed" : "Open"} sub="Mon–Sat · Africa/Nairobi" />
       </div>
 
@@ -141,9 +154,9 @@ function WithdrawPage() {
                 </span>
               </div>
               <div className="mt-2 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
-                <div>Accumulated: KSh {fmt(inv.accumulated)}</div>
-                <div>Withdrawable: KSh {fmt(inv.withdrawable)}</div>
-                <div>Locked: KSh {fmt(inv.locked)}</div>
+                <div>Accrued profit: {fmt(inv.accumulated)}</div>
+                <div>Paid profit: {fmt(inv.withdrawable)}</div>
+                <div>Locked profit: {fmt(inv.locked)}</div>
               </div>
               <div className="mt-2 text-xs text-muted-foreground">Next earning: {inv.nextEarningDate ? new Date(`${inv.nextEarningDate}T00:00:00Z`).toLocaleDateString() : "—"}</div>
             </div>
@@ -158,17 +171,17 @@ function WithdrawPage() {
             className="mt-2 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none" />
         </div>
         <div>
-          <label className="text-sm font-medium">Amount (KSh)</label>
-          <input type="number" step="1" min={minW} max={Math.floor(balance)} value={amount} onChange={(e) => setAmount(e.target.value.replace(/\D/g, ""))} required
+          <label className="text-sm font-medium">Amount (USD)</label>
+          <input type="number" step="0.01" min={minW} max={effectiveBalance} value={amount} onChange={(e) => setAmount(e.target.value)} required
             className="mt-2 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none" />
-          <div className="mt-1 text-xs text-muted-foreground">Min KSh {fmt(minW)} · whole numbers only</div>
+          <div className="mt-1 text-xs text-muted-foreground">Minimum {fmt(minW)} · available balance only</div>
         </div>
 
         {amt > 0 && (
           <div className="rounded-xl border border-border/60 bg-background p-4 text-sm space-y-1">
-            <Row label="Amount" value={`KSh ${fmt(amt)}`} />
-            {feeEnabled && <Row label={`Withdrawal charge (${feePct}%)`} value={`- KSh ${fmt(fee)}`} />}
-            <Row label="Net to receive" value={`KSh ${fmt(net)}`} accent />
+            <Row label="Amount" value={fmt(amt)} />
+            {feeEnabled && <Row label={`Withdrawal fee (${feePct}%)`} value={`- ${fmt(fee)}`} />}
+            <Row label="You receive" value={fmt(net)} accent />
           </div>
         )}
 
@@ -182,33 +195,44 @@ function WithdrawPage() {
         {withdrawals.length === 0 ? (
           <p className="mt-3 text-sm text-muted-foreground">No withdrawals yet.</p>
         ) : (
-          <div className="mt-4 overflow-x-auto rounded-2xl border border-border/60">
-            <table className="w-full text-sm">
-              <thead className="bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">Amount</th><th className="px-4 py-3">Phone</th><th className="px-4 py-3">Status</th></tr>
-              </thead>
-              <tbody>
-                {withdrawals.map(w => (
-                  <tr key={w.id} className="border-t border-border/40">
-                    <td className="px-4 py-3 text-muted-foreground">{new Date(w.created_at).toLocaleDateString()}</td>
-                    <td className="px-4 py-3 font-medium">
-                      KSh {fmt(w.amount)}
-                      {feeEnabled && (
-                        (() => {
-                          const feeRow = Math.floor((Number(w.amount) * feePct) / 100);
-                          const netRow = Math.max(0, Math.floor(Number(w.amount)) - feeRow);
-                          return <div className="text-xs text-muted-foreground mt-1">Net: KSh {fmt(netRow)} ({feePct}% fee)</div>;
-                        })()
-                      )}
-                    </td>
-                    <td className="px-4 py-3 font-mono">{w.mpesa_phone}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${w.status === "paid" || w.status==="approved" ? "bg-emerald-500/15 text-emerald-400" : w.status === "rejected" ? "bg-red-500/15 text-red-400" : "bg-yellow-500/15 text-yellow-400"}`}>{w.status}</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-4 overflow-hidden rounded-2xl border border-border/60 bg-card">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">Amount</th><th className="px-4 py-3">Phone</th><th className="px-4 py-3">Status</th></tr>
+                </thead>
+                <tbody>
+                  {visibleWithdrawals.map(w => (
+                    <tr key={w.id} className="border-t border-border/40">
+                      <td className="px-4 py-3 text-muted-foreground">{new Date(w.created_at).toLocaleDateString()}</td>
+                      <td className="px-4 py-3 font-medium">
+                        {fmt(w.amount)}
+                        {feeEnabled && (
+                          (() => {
+                            const { fee: feeRow, netAmount: netRow } = calculateWithdrawalFee(w.amount, feePct);
+                            return <div className="text-xs text-muted-foreground mt-1">Net: {fmt(netRow)} ({feePct}% fee)</div>;
+                          })()
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-mono">{w.mpesa_phone}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium capitalize ${w.status === "paid" || w.status==="approved" ? "bg-emerald-500/15 text-emerald-400" : w.status === "rejected" ? "bg-red-500/15 text-red-400" : "bg-yellow-500/15 text-yellow-400"}`}>{w.status}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <DataTablePagination
+              page={safePage}
+              totalPages={totalPages}
+              rowsPerPage={rowsPerPage}
+              onPageChange={setPage}
+              onRowsPerPageChange={setRowsPerPage}
+              totalItems={withdrawals.length}
+              startIndex={(safePage - 1) * rowsPerPage}
+              endIndex={Math.min(safePage * rowsPerPage, withdrawals.length)}
+            />
           </div>
         )}
       </section>

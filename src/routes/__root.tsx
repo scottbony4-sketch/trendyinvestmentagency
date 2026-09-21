@@ -36,6 +36,7 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
+  const detail = import.meta.env.DEV ? error.message : null;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -46,6 +47,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
         <p className="mt-2 text-sm text-muted-foreground">
           Something went wrong on our end. You can try refreshing or head back home.
         </p>
+        {detail && <pre className="mt-4 max-h-32 overflow-auto rounded-md bg-muted p-3 text-left text-xs text-muted-foreground">{detail}</pre>}
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
@@ -73,16 +75,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "TRENDY INVESTMENT AGENCY— Mine coins. Earn shillings." },
-      { name: "description", content: "TRENDY INVESTMENT AGENCY, start a 24-hour mining cycle and convert mined coins into Kenyan shillings — straight to your wallet." },
+      { title: "TRENDY INVESTMENT AGENCY — USD investment plans" },
+      { name: "description", content: "TRENDY INVESTMENT AGENCY offers fixed USD investment plans with 20% weekly profit and 90-day maturity." },
       { name: "author", content: "TRENDY INVESTMENT AGENCY" },
-      { property: "og:title", content: "TRENDY INVESTMENT AGENCY— Mine coins. Earn shillings." },
-      { property: "og:description", content: "TRENDY INVESTMENT AGENCY, start a 24-hour mining cycle and convert mined coins into Kenyan shillings — straight to your wallet." },
+      { property: "og:title", content: "TRENDY INVESTMENT AGENCY — USD investment plans" },
+      { property: "og:description", content: "Fixed USD investment plans with 20% weekly profit and 90-day maturity." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@trendyinvestment" },
-      { name: "twitter:title", content: "TRENDY INVESTMENT AGENCY— Mine coins. Earn shillings." },
-      { name: "twitter:description", content: "TRENDY INVESTMENT AGENCY, start a 24-hour mining cycle and convert mined coins into Kenyan shillings — straight to your wallet." },
+      { name: "twitter:title", content: "TRENDY INVESTMENT AGENCY — USD investment plans" },
+      { name: "twitter:description", content: "Fixed USD investment plans with 20% weekly profit and 90-day maturity." },
       { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/af917b35-716e-4a7f-adaf-d64ebc0f534f" },
       { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/af917b35-716e-4a7f-adaf-d64ebc0f534f" },
     ],

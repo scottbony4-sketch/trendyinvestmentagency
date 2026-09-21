@@ -20,9 +20,16 @@ export function useAuth() {
   return { user, loading };
 }
 
-export const PLANS = [250, 500, 1000, 2000, 3000, 5000, 7000, 10000, 15000, 20000, 30000, 50000, 100000];
-export const fmt = (n: number | string) =>
-  Number(n).toLocaleString("en-KE", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+export const USD_PLAN_CONFIG = {
+  bronze: { name: "BRONZE", minAmount: 100, profitRate: 20, cycleDays: 7, durationDays: 90, currency: "USD", symbol: "$", code: "USD" },
+  silver: { name: "SILVER", minAmount: 250, profitRate: 20, cycleDays: 7, durationDays: 90, currency: "USD", symbol: "$", code: "USD" },
+  gold: { name: "GOLD", minAmount: 500, profitRate: 20, cycleDays: 7, durationDays: 90, currency: "USD", symbol: "$", code: "USD" },
+};
+
+export const PLANS = [100, 250, 500];
+export const formatCurrency = (n: number | string, digits = 2) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Number(n || 0));
+export const fmt = (n: number | string) => formatCurrency(n, 2);
 
 export function useIsAdmin(userId: string | undefined) {
   const [isAdmin, setIsAdmin] = useState(false);

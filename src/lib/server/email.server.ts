@@ -63,12 +63,12 @@ function createLink(path: string) {
 }
 
 export function formatAmount(amount: number) {
-  const rounded = Math.round(Number(amount ?? 0));
-  return new Intl.NumberFormat("en-KE", {
+  return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "KES",
-    maximumFractionDigits: 0,
-  }).format(rounded);
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(amount ?? 0));
 }
 
 export async function sendBrandEmail({
