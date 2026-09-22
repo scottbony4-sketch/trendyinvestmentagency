@@ -218,20 +218,9 @@ function AdminPage() {
     if (row.status === status) { toast.success(`Referral already ${status}`); return; }
 
     if (status === 'approved') {
-      // Credit referrer balance and mark referral approved
-      const referrerId = row.referrer_id as string;
-      const amount = Number(row.amount);
-      const currentBal = profiles[referrerId]?.balance ?? 0;
-      // Only credit if not already credited (status wasn't approved/paid)
-      if (row.status !== 'approved' && row.status !== 'paid') {
-        const { error: creditErr } = await supabase.from("profiles").update({ balance: currentBal + amount }).eq("id", referrerId);
-        if (creditErr) { toast.error(creditErr.message); return; }
-      }
       const { error: e2 } = await supabase.from("referral_earnings").update({ status: 'approved' }).eq("id", id);
       if (e2) { toast.error(e2.message); return; }
-      // Mark any pending referral transaction as completed
-      await supabase.from("transactions").update({ status: 'completed' }).eq("user_id", referrerId).eq("type", 'referral').eq("metadata->>deposit_id", row.deposit_id);
-      toast.success("Referral approved and referrer credited");
+      toast.success("Referral status updated");
       void refresh();
       return;
     }
@@ -249,17 +238,8 @@ function AdminPage() {
     const ref = row as ReferralRow;
     if (ref.status === 'paid') { toast.success('Referral already marked paid'); return; }
 
-    // If referral is still pending, credit balance now. If already approved, assume credited.
-    if (ref.status !== 'approved') {
-      const newBal = (profiles[ref.referrer_id]?.balance ?? 0) + Number(ref.amount);
-      const { error: creditErr } = await supabase.from("profiles").update({ balance: newBal }).eq("id", ref.referrer_id);
-      if (creditErr) { toast.error(creditErr.message); return; }
-    }
-
     const { error: e2 } = await supabase.from("referral_earnings").update({ status: 'paid' }).eq("id", id);
     if (e2) { toast.error(e2.message); return; }
-    // Ensure transaction shows completed
-    await supabase.from("transactions").update({ status: 'completed' }).eq("user_id", ref.referrer_id).eq("type", 'referral').eq("metadata->>deposit_id", ref.deposit_id);
     toast.success("Referral marked as paid");
     void refresh();
   };

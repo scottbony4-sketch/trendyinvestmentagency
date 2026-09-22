@@ -4,7 +4,8 @@ import { Coins, Wallet, TrendingUp, ArrowDownToLine, ArrowUpFromLine, Users, Tim
 import { supabase } from "@/integrations/supabase/client";
 import { fmt } from "@/lib/auth";
 import { generateDailyEarnings, releaseUnlockedEarnings } from "@/lib/api/earnings.functions";
-import { aggregateInvestmentEarnings, calculateInvestmentPlanMetrics, getPlanProgress, getWithdrawalUnlockDate, summarizePortfolioBalance } from "@/lib/investment-withdrawal";
+import { aggregateInvestmentEarnings, calculateInvestmentPlanMetrics, getWithdrawalUnlockDate, summarizePortfolioBalance } from "@/lib/investment-withdrawal";
+import { MiningEarningsChart } from "@/components/MiningEarningsChart";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -18,15 +19,20 @@ type Investment = {
   status: string; created_at: string; plan_id: string | null;
   start_at: string; end_at: string | null;
   projected_payout: number; roi_percent: number;
+  term_days?: number | null; principal_amount?: number | null; currency?: string | null;
+  profit_rate?: number | null; daily_profit?: number | null; weekly_profit?: number | null;
+  start_date?: string | null; maturity_date?: string | null;
+  current_cycle_start?: string | null; current_cycle_end?: string | null;
+  total_accrued_profit?: number | null; total_paid_profit?: number | null;
 };
 type DailyEarningRow = {
   id: string; investment_id: string; earning_date: string; amount: number; added_to_balance: boolean; status: string;
 };
 type Tx = { id: string; type: string; amount: number; status: string; description: string; created_at: string };
 
-const MINING_STATUS_LABEL: Record<string, string> = {
+const INVESTMENT_STATUS_LABEL: Record<string, string> = {
   pending: "Pending Payment",
-  active: "Active Mining",
+  active: "Active Investment",
   completed: "Completed",
   paused: "Paused",
   cancelled: "Cancelled",
@@ -61,10 +67,6 @@ function remaining(startAt: string | null, endAt: string | null, durationDays: n
   return { pct: -1, text: `${d}d ${h}h ${m}m` };
 }
 
-function progressPct(startAt: string, endAt: string | null, durationDays: number | null) {
-  return getPlanProgress(startAt, endAt, durationDays, new Date());
-}
-
 function Dashboard() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [investments, setInvestments] = useState<Investment[]>([]);
@@ -80,6 +82,7 @@ function Dashboard() {
 
   const refresh = useCallback(async () => {
     try { await supabase.rpc("mature_investments"); } catch { /* ignore */ }
+    try { await supabase.rpc("reconcile_available_balance"); } catch (err) { console.error("Balance reconciliation failed", err); }
     const [p, i, d, w, r, cl, de, tx] = await Promise.all([
       supabase.from("profiles").select("balance, full_name").maybeSingle(),
       supabase.from("investments").select("*").order("created_at", { ascending: false }),
@@ -146,9 +149,8 @@ function Dashboard() {
     let dailyAmount = 0;
     let completedDays = 0;
     let daysRemaining = 0;
-    let progress = 0;
     let nextEarningDate: string | null = null;
-    let status = "Active Mining";
+    let status = "Active Investment";
 
     let totalDuration = 0;
 
@@ -181,8 +183,6 @@ function Dashboard() {
       if (!nextEarningDate && cycleNext) nextEarningDate = cycleNext;
     }
 
-    progress = totalDuration > 0 ? Math.round((completedDays / totalDuration) * 100) : 0;
-
     return {
       todayEarning,
       totalEarned,
@@ -192,7 +192,6 @@ function Dashboard() {
       dailyAmount,
       completedDays,
       daysRemaining,
-      progress: Math.min(100, progress),
       nextEarningDate,
       status,
     };
@@ -260,7 +259,6 @@ function Dashboard() {
             <Metric label="Daily earning amount" value={fmt(dailySummary.dailyAmount)} />
             <Metric label="Days completed" value={String(dailySummary.completedDays)} />
             <Metric label="Days remaining" value={String(dailySummary.daysRemaining)} />
-            <Metric label="Mining progress" value={`${dailySummary.progress}%`} />
             <Metric label="Next earning" value={dailySummary.nextEarningDate ? new Date(`${dailySummary.nextEarningDate}T00:00:00Z`).toLocaleDateString() : "—"} />
           </div>
         </section>
@@ -278,7 +276,7 @@ function Dashboard() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">Mining plan</th><th className="px-4 py-3">Investment</th><th className="px-4 py-3">Daily earning</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Added to balance</th></tr>
+                  <tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">Investment plan</th><th className="px-4 py-3">Investment</th><th className="px-4 py-3">Daily earning</th><th className="px-4 py-3">Status</th><th className="px-4 py-3">Added to balance</th></tr>
                 </thead>
                 <tbody>
                   {visibleDailyEarnings.map(row => {
@@ -346,7 +344,7 @@ function Dashboard() {
 
       <section>
         <div className="flex items-end justify-between">
-          <h2 className="text-xl font-semibold">Mining progress</h2>
+          <h2 className="text-xl font-semibold">Investment earnings</h2>
           <Link to="/invest" className="text-sm font-medium text-primary hover:underline">+ Start new cycle</Link>
         </div>
         {investments.length === 0 ? (
@@ -354,35 +352,10 @@ function Dashboard() {
             No investments yet. <Link to="/invest" className="text-primary hover:underline">Start investing →</Link>
           </div>
         ) : (
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            {investments.slice(0, 6).map(i => {
-              const pct = progressPct(i.start_at, i.end_at, i.duration_days);
-              const rem = remaining(i.start_at, i.end_at, i.duration_days);
-              const label = MINING_STATUS_LABEL[i.status] ?? i.status;
-              return (
-                <div key={i.id} className="rounded-2xl border border-border/60 bg-card p-5">
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <div className="text-xs uppercase text-muted-foreground">{i.duration_days} days · {Math.round(Number(i.roi_percent))}% return</div>
-                      <div className="mt-1 text-lg font-bold">{fmt(i.plan_amount)}</div>
-                      <div className="text-xs text-primary">Projected return: {fmt(i.projected_payout)}</div>
-                    </div>
-                    <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${statusColor(i.status)}`}>{label}</span>
-                  </div>
-                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-secondary">
-                    <div className="h-full bg-[image:var(--gradient-gold)] transition-all" style={{ width: `${pct}%` }} />
-                  </div>
-                  <div className="mt-2 flex justify-between text-xs text-muted-foreground">
-                    <span>{pct}% complete</span>
-                    <span>{rem.text} remaining</span>
-                  </div>
-                  <div className="mt-2 grid grid-cols-2 gap-x-4 text-[11px] text-muted-foreground">
-                    <span>Started: {new Date(i.start_at).toLocaleString()}</span>
-                    <span>Ends: {i.end_at ? new Date(i.end_at).toLocaleString() : "—"}</span>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="mt-4 space-y-4">
+            {investments.slice(0, 6).map((investment) => (
+              <MiningEarningsChart key={investment.id} investment={investment} earningRows={dailyEarnings} />
+            ))}
           </div>
         )}
       </section>

@@ -90,7 +90,7 @@ function Nav({ isAdmin, email, unread }: { isAdmin: boolean; email: string; unre
       >
         <div className={`flex items-center justify-between border-b border-border/60 bg-white/[0.03] px-4 py-4 sm:px-5 ${desktopCollapsed ? "lg:px-2" : "lg:px-5"}`}>
           <Link to="/dashboard" className={`flex items-center ${desktopCollapsed ? "lg:justify-center lg:mx-auto" : "gap-3"}`}>
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[image:var(--gradient-gold)] text-lg font-black text-primary-foreground shadow-[0_12px_30px_rgba(234,179,8,0.35)]">T</div>
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-primary/40 bg-primary/10 text-lg font-black text-primary">T</div>
             {!desktopCollapsed && (
               <div className="flex flex-col">
                 <span className="text-[10px] font-semibold uppercase tracking-[0.28em] text-muted-foreground">Agency</span>
@@ -126,16 +126,16 @@ function Nav({ isAdmin, email, unread }: { isAdmin: boolean; email: string; unre
                 key={to}
                 to={to}
                 onClick={() => setMobileOpen(false)}
-                className={`group flex min-h-12 items-center gap-3 rounded-2xl px-3 py-3.5 text-sm font-medium transition-all active:scale-[0.99] ${
+                className={`group flex min-h-11 items-center gap-3 rounded-lg border-l-2 border-transparent px-3 py-3 text-sm font-medium transition-all active:scale-[0.99] ${
                   desktopCollapsed ? "justify-center px-2" : ""
                 } ${
                   active
-                    ? "bg-primary/15 text-primary shadow-[inset_0_0_0_1px_rgba(234,179,8,0.22),0_8px_24px_rgba(234,179,8,0.08)]"
+                    ? "border-primary bg-primary/10 text-primary"
                     : "text-muted-foreground hover:bg-white/[0.06] hover:text-foreground"
                 }`}
                 title={desktopCollapsed ? label : undefined}
               >
-                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${active ? "bg-primary/15 text-primary" : "bg-slate-900/80 text-muted-foreground group-hover:text-foreground"}`}>
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${active ? "bg-primary/10 text-primary" : "bg-secondary text-muted-foreground group-hover:text-foreground"}`}>
                   <Icon className="h-4 w-4" />
                 </span>
                 {!desktopCollapsed && <span>{label}</span>}
@@ -182,7 +182,7 @@ function Nav({ isAdmin, email, unread }: { isAdmin: boolean; email: string; unre
       </aside>
 
       <div className="flex min-h-screen flex-1 flex-col">
-        <header className="sticky top-0 z-30 border-b border-border/60 bg-background/70 backdrop-blur-xl">
+        <header className="sticky top-0 z-30 border-b border-border bg-[#080B0F]/90 backdrop-blur-xl">
           <div className="flex items-center justify-between px-3 py-3.5 sm:px-6 sm:py-4">
             <div className="flex items-center gap-3">
               <button

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { fmt } from "@/lib/auth";
+import { generateDailyEarnings, releaseUnlockedEarnings } from "@/lib/api/earnings.functions";
 import { WhatsAppInline } from "@/components/WhatsAppSupport";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { sendWithdrawalRequestedEmail } from "@/lib/api/email.functions";
@@ -39,6 +40,12 @@ function WithdrawPage() {
   const [rowsPerPage, setRowsPerPage] = useState(5);
 
   const refresh = async () => {
+    try {
+      await generateDailyEarnings();
+      await releaseUnlockedEarnings();
+    } catch (error) {
+      console.error("Daily earnings release failed", error);
+    }
     const [p, w, s, inv, de] = await Promise.all([
       supabase.from("profiles").select("balance, phone").maybeSingle(),
       supabase.from("withdrawals").select("*").order("created_at", { ascending: false }).limit(20),

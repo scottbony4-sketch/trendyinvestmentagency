@@ -141,7 +141,7 @@ function InvestPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold">Choose your mining plan</h1>
+        <h1 className="text-2xl font-bold">Choose an investment plan</h1>
         <p className="mt-1 text-sm text-muted-foreground">Choose a fixed USD plan and select how to invest.</p>
       </div>
 
@@ -203,19 +203,19 @@ function InvestPage() {
           <div className="sm:col-span-2 rounded-2xl border border-border/60 bg-background p-4">
             <div className="grid gap-2 sm:grid-cols-2">
               <button type="button" onClick={() => setPaymentMethod("mpesa")}
-                className={`rounded-2xl border px-4 py-3 text-left ${paymentMethod === "mpesa" ? "border-primary bg-primary/10" : "border-border bg-white/70"}`}>
+                className={`rounded-2xl border px-4 py-3 text-left ${paymentMethod === "mpesa" ? "border-primary bg-primary/10" : "border-border bg-secondary"}`}>
                 <div className="text-sm font-semibold">Pay with M-Pesa</div>
                 <div className="mt-1 text-xs text-muted-foreground">Continue with the existing M-Pesa deposit process.</div>
               </button>
               <button type="button" onClick={() => setPaymentMethod("balance")}
-                className={`rounded-2xl border px-4 py-3 text-left ${paymentMethod === "balance" ? "border-primary bg-primary/10" : "border-border bg-white/70"}`}>
+                className={`rounded-2xl border px-4 py-3 text-left ${paymentMethod === "balance" ? "border-primary bg-primary/10" : "border-border bg-secondary"}`}>
                 <div className="text-sm font-semibold">Invest from Available Balance</div>
                 <div className="mt-1 text-xs text-muted-foreground">Use your real available account balance.</div>
               </button>
             </div>
 
             <div className="mt-4 space-y-3">
-              <div className="rounded-xl border border-border/60 bg-white/80 p-4 text-sm">
+              <div className="rounded-xl border border-border/60 bg-secondary p-4 text-sm">
                 <div className="font-semibold">Available balance</div>
                 <div className="mt-1 text-lg font-bold">{fmt(balance)}</div>
                 {paymentMethod === "balance" && !balanceAvailable && (
@@ -230,7 +230,7 @@ function InvestPage() {
               )}
 
               {paymentMethod === "balance" && (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-700">
+                <div className="rounded-xl border border-primary/25 bg-primary/10 p-4 text-sm text-primary">
                   Your available balance will be deducted immediately and the investment will start right away at 0% progress.
                 </div>
               )}
