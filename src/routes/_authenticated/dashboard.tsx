@@ -30,6 +30,18 @@ type DailyEarningRow = {
 };
 type Tx = { id: string; type: string; amount: number; status: string; description: string; created_at: string };
 
+function calculateLedgerBalance(transactions: Tx[], withdrawals: { amount: number; status: string }[]) {
+  const ledgerTotal = transactions.reduce((total, transaction) => {
+    if (!['completed', 'active', 'paid'].includes(transaction.status)) return total;
+    const amount = Number(transaction.amount || 0);
+    return total + (['deposit', 'daily_earning', 'referral', 'investment_maturity'].includes(transaction.type) ? amount : ['investment', 'withdrawal'].includes(transaction.type) ? -amount : 0);
+  }, 0);
+  const heldWithdrawals = withdrawals
+    .filter(withdrawal => ['pending', 'approved', 'paid'].includes(withdrawal.status))
+    .reduce((total, withdrawal) => total + Number(withdrawal.amount || 0), 0);
+  return Math.max(0, ledgerTotal - heldWithdrawals);
+}
+
 const INVESTMENT_STATUS_LABEL: Record<string, string> = {
   pending: "Pending Payment",
   active: "Active Investment",
@@ -82,8 +94,9 @@ function Dashboard() {
 
   const refresh = useCallback(async () => {
     try { await supabase.rpc("mature_investments"); } catch { /* ignore */ }
-    try { await supabase.rpc("reconcile_available_balance"); } catch (err) { console.error("Balance reconciliation failed", err); }
-    const [p, i, d, w, r, cl, de, tx] = await Promise.all([
+    const reconciliation = await supabase.rpc("reconcile_available_balance");
+    if (reconciliation.error) console.error("Balance reconciliation failed", reconciliation.error);
+    const [p, i, d, w, r, cl, de, tx, ledger] = await Promise.all([
       supabase.from("profiles").select("balance, full_name").maybeSingle(),
       supabase.from("investments").select("*").order("created_at", { ascending: false }),
       supabase.from("deposits").select("amount,status"),
@@ -92,8 +105,13 @@ function Dashboard() {
       supabase.from("transactions").select("amount").eq("type", "claim"),
       supabase.from("daily_earnings").select("id, investment_id, earning_date, amount, added_to_balance, status").order("earning_date", { ascending: true }),
       supabase.from("transactions").select("*").order("created_at", { ascending: false }).limit(8),
+      supabase.from("transactions").select("id, type, amount, status, description, created_at").order("created_at", { ascending: true }),
     ]);
-    if (p.data) setProfile(p.data as Profile);
+    if (p.data) {
+      const profileBalance = Number(p.data.balance || 0);
+      const ledgerBalance = ledger.data?.length ? calculateLedgerBalance(ledger.data as Tx[], w.data ?? []) : profileBalance;
+      setProfile({ ...p.data, balance: ledger.data?.length ? ledgerBalance : profileBalance } as Profile);
+    }
     if (i.data) setInvestments(i.data as Investment[]);
     if (d.data) setDeposits(d.data);
     if (w.data) setWithdrawals(w.data);

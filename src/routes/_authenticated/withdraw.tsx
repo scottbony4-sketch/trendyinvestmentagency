@@ -7,7 +7,7 @@ import { generateDailyEarnings, releaseUnlockedEarnings } from "@/lib/api/earnin
 import { WhatsAppInline } from "@/components/WhatsAppSupport";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 import { sendWithdrawalRequestedEmail } from "@/lib/api/email.functions";
-import { aggregateInvestmentEarnings, calculateWithdrawalFee, getAvailableWithdrawalBalance, getWithdrawalAvailabilityReason, getWithdrawalUnlockDate } from "@/lib/investment-withdrawal";
+import { aggregateInvestmentEarnings, calculateWithdrawalFee, getAvailableWithdrawalBalance, getWithdrawalUnlockDate } from "@/lib/investment-withdrawal";
 
 export const Route = createFileRoute("/_authenticated/withdraw")({
   head: () => ({ meta: [{ title: "Withdraw — TRENDY INVESTMENT AGENCY" }] }),
@@ -71,7 +71,6 @@ function WithdrawPage() {
   const closed = override === false || isSunday;
   const feeEnabled = settings?.withdrawal_fee_enabled !== false;
   const feePct = feeEnabled ? Number(settings?.withdrawal_fee_percent ?? 1) : 0;
-  const minW = Math.max(20, Math.floor(Number(settings?.min_withdrawal ?? 20)));
   const amt = Math.max(0, Number(amount) || 0);
   const { fee, netAmount: net } = calculateWithdrawalFee(amt, feePct);
   const investmentMetrics = useMemo(() => investments
@@ -82,7 +81,6 @@ function WithdrawPage() {
       unlockDateKey: getWithdrawalUnlockDate(inv.start_at, inv.duration_days),
     })), [dailyEarnings, investments]);
   const effectiveBalance = useMemo(() => getAvailableWithdrawalBalance(balance, investmentMetrics), [balance, investmentMetrics]);
-  const withdrawalReason = useMemo(() => getWithdrawalAvailabilityReason(effectiveBalance, minW, investmentMetrics), [effectiveBalance, investmentMetrics, minW]);
   const totalPages = Math.max(1, Math.ceil(withdrawals.length / rowsPerPage));
   const safePage = Math.min(page, totalPages);
   const visibleWithdrawals = useMemo(() => withdrawals.slice((safePage - 1) * rowsPerPage, safePage * rowsPerPage), [withdrawals, safePage, rowsPerPage]);
@@ -102,8 +100,7 @@ function WithdrawPage() {
         ? "Withdrawals are temporarily closed by admin."
         : "Withdrawals are closed on Sundays. Please request withdrawal from Monday to Saturday.");
     }
-    if (!amt || amt < minW) return toast.error(`Minimum withdrawal is ${fmt(minW)}`);
-    if (withdrawalReason) return toast.error(withdrawalReason);
+    if (!amt) return toast.error("Enter a withdrawal amount");
     if (amt > effectiveBalance) return toast.error("Amount exceeds your balance");
     if (!phone.trim()) return toast.error("Enter your M-Pesa phone");
     const { data: { user } } = await supabase.auth.getUser();
@@ -140,12 +137,6 @@ function WithdrawPage() {
         <div className="mt-2"><WhatsAppInline label="Need help?" /></div>
       </div>
 
-      {withdrawalReason && (
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-300">
-          {withdrawalReason}
-        </div>
-      )}
-
       {investmentMetrics.length > 0 && (
         <section className="space-y-3 rounded-2xl border border-border/60 bg-card p-4">
           <div className="text-sm font-semibold">Investment withdrawal status</div>
@@ -179,9 +170,9 @@ function WithdrawPage() {
         </div>
         <div>
           <label className="text-sm font-medium">Amount (USD)</label>
-          <input type="number" step="0.01" min={minW} max={effectiveBalance} value={amount} onChange={(e) => setAmount(e.target.value)} required
+          <input type="number" step="0.01" min="0.01" max={effectiveBalance} value={amount} onChange={(e) => setAmount(e.target.value)} required
             className="mt-2 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none" />
-          <div className="mt-1 text-xs text-muted-foreground">Minimum {fmt(minW)} · available balance only</div>
+          <div className="mt-1 text-xs text-muted-foreground">Available balance only</div>
         </div>
 
         {amt > 0 && (
@@ -192,7 +183,7 @@ function WithdrawPage() {
           </div>
         )}
 
-        <button disabled={loading || effectiveBalance < minW || closed} className="rounded-md bg-[image:var(--gradient-gold)] px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-gold)] disabled:opacity-60">
+        <button disabled={loading || effectiveBalance <= 0 || closed} className="rounded-md bg-[image:var(--gradient-gold)] px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-gold)] disabled:opacity-60">
           {loading ? "Requesting…" : "Request withdrawal"}
         </button>
       </form>
