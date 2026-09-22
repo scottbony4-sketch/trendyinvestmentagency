@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { fmt } from "@/lib/auth";
+import { fmt, fmtKes, USD_TO_KES_RATE } from "@/lib/auth";
 import { generateDailyEarnings, releaseUnlockedEarnings } from "@/lib/api/earnings.functions";
 import { WhatsAppInline } from "@/components/WhatsAppSupport";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
@@ -46,6 +46,8 @@ function WithdrawPage() {
     } catch (error) {
       console.error("Daily earnings release failed", error);
     }
+    const reconciliation = await supabase.rpc("reconcile_available_balance");
+    if (reconciliation.error) console.error("Balance reconciliation failed", reconciliation.error);
     const [p, w, s, inv, de] = await Promise.all([
       supabase.from("profiles").select("balance, phone").maybeSingle(),
       supabase.from("withdrawals").select("*").order("created_at", { ascending: false }).limit(20),
@@ -112,7 +114,7 @@ function WithdrawPage() {
     setLoading(false);
     if (error) return toast.error(error.message);
     if (inserted?.id) void sendWithdrawalRequestedEmail({ data: { withdrawalId: inserted.id } }).catch(() => {});
-    toast.success("Withdrawal requested. Funds held pending approval.");
+    toast.success("Waiting for approval");
     setAmount("");
     void refresh();
   };
@@ -177,9 +179,9 @@ function WithdrawPage() {
 
         {amt > 0 && (
           <div className="rounded-xl border border-border/60 bg-background p-4 text-sm space-y-1">
-            <Row label="Amount" value={fmt(amt)} />
-            {feeEnabled && <Row label={`Withdrawal fee (${feePct}%)`} value={`- ${fmt(fee)}`} />}
-            <Row label="You receive" value={fmt(net)} accent />
+            <Row label="Requested" value={`${fmt(amt)} (${fmtKes(amt * USD_TO_KES_RATE)})`} />
+            {feeEnabled && <Row label={`Withdrawal charge (${feePct}%)`} value={`- ${fmt(fee)} (- ${fmtKes(fee * USD_TO_KES_RATE)})`} />}
+            <Row label="You receive" value={`${fmt(net)} (${fmtKes(net * USD_TO_KES_RATE)})`} accent />
           </div>
         )}
 
@@ -208,7 +210,13 @@ function WithdrawPage() {
                         {feeEnabled && (
                           (() => {
                             const { fee: feeRow, netAmount: netRow } = calculateWithdrawalFee(w.amount, feePct);
-                            return <div className="text-xs text-muted-foreground mt-1">Net: {fmt(netRow)} ({feePct}% fee)</div>;
+                            return (
+                              <div className="mt-1 text-xs text-muted-foreground">
+                                Requested: {fmt(w.amount)} ({fmtKes(Number(w.amount) * USD_TO_KES_RATE)})
+                                <br />
+                                Charge: {fmt(feeRow)} ({fmtKes(feeRow * USD_TO_KES_RATE)}) · Net: {fmt(netRow)} ({fmtKes(netRow * USD_TO_KES_RATE)}) ({feePct}% fee)
+                              </div>
+                            );
                           })()
                         )}
                       </td>

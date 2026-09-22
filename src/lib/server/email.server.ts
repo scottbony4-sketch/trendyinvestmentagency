@@ -114,7 +114,7 @@ export function buildDepositSubmittedEmail({ amount, depositId }: { amount: numb
   const subject = `${EMAIL_BRAND_NAME}: Deposit received`;
   const text = `Hello,
 
-We received your deposit request of ${formattedAmount} and it is pending admin approval.
+We received your deposit request of ${formattedAmount}. Waiting for approval.
 ${depositId ? `Deposit reference: ${depositId}
 ` : ""}
 You will receive an update as soon as it is reviewed.
@@ -122,7 +122,7 @@ You will receive an update as soon as it is reviewed.
 Thank you for choosing ${EMAIL_BRAND_NAME}.`;
   const { html } = buildEmailShell({
     title: "Deposit received",
-    body: `We received your deposit request of ${formattedAmount} and it is pending admin approval.${depositId ? `\n\nDeposit reference: ${depositId}` : ""}\n\nYou will receive an update as soon as it is reviewed.`,
+    body: `We received your deposit request of ${formattedAmount}. Waiting for approval.${depositId ? `\n\nDeposit reference: ${depositId}` : ""}\n\nYou will receive an update as soon as it is reviewed.`,
     ctaLabel: "Open your dashboard",
     ctaUrl: createLink("/dashboard"),
   });

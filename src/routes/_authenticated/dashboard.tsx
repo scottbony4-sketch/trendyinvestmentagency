@@ -30,18 +30,6 @@ type DailyEarningRow = {
 };
 type Tx = { id: string; type: string; amount: number; status: string; description: string; created_at: string };
 
-function calculateLedgerBalance(transactions: Tx[], withdrawals: { amount: number; status: string }[]) {
-  const ledgerTotal = transactions.reduce((total, transaction) => {
-    if (!['completed', 'active', 'paid'].includes(transaction.status)) return total;
-    const amount = Number(transaction.amount || 0);
-    return total + (['deposit', 'daily_earning', 'referral', 'investment_maturity'].includes(transaction.type) ? amount : ['investment', 'withdrawal'].includes(transaction.type) ? -amount : 0);
-  }, 0);
-  const heldWithdrawals = withdrawals
-    .filter(withdrawal => ['pending', 'approved', 'paid'].includes(withdrawal.status))
-    .reduce((total, withdrawal) => total + Number(withdrawal.amount || 0), 0);
-  return Math.max(0, ledgerTotal - heldWithdrawals);
-}
-
 const INVESTMENT_STATUS_LABEL: Record<string, string> = {
   pending: "Pending Payment",
   active: "Active Investment",
@@ -85,7 +73,7 @@ function Dashboard() {
   const [deposits, setDeposits] = useState<{ amount: number; status: string }[]>([]);
   const [withdrawals, setWithdrawals] = useState<{ amount: number; status: string }[]>([]);
   const [refEarn, setRefEarn] = useState(0);
-  const [claims, setClaims] = useState(0);
+  const [paidProfit, setPaidProfit] = useState(0);
   const [dailyEarnings, setDailyEarnings] = useState<DailyEarningRow[]>([]);
   const [recent, setRecent] = useState<Tx[]>([]);
   const [tick, setTick] = useState(0);
@@ -102,22 +90,24 @@ function Dashboard() {
       supabase.from("deposits").select("amount,status"),
       supabase.from("withdrawals").select("amount,status"),
       supabase.from("referral_earnings").select("amount"),
-      supabase.from("transactions").select("amount").eq("type", "claim"),
       supabase.from("daily_earnings").select("id, investment_id, earning_date, amount, added_to_balance, status").order("earning_date", { ascending: true }),
       supabase.from("transactions").select("*").order("created_at", { ascending: false }).limit(8),
       supabase.from("transactions").select("id, type, amount, status, description, created_at").order("created_at", { ascending: true }),
     ]);
     if (p.data) {
-      const profileBalance = Number(p.data.balance || 0);
-      const ledgerBalance = ledger.data?.length ? calculateLedgerBalance(ledger.data as Tx[], w.data ?? []) : profileBalance;
-      setProfile({ ...p.data, balance: ledger.data?.length ? ledgerBalance : profileBalance } as Profile);
+      setProfile({ ...p.data, balance: Number(p.data.balance || 0) } as Profile);
     }
     if (i.data) setInvestments(i.data as Investment[]);
     if (d.data) setDeposits(d.data);
     if (w.data) setWithdrawals(w.data);
     if (r.data) setRefEarn(r.data.reduce((s, x) => s + Number(x.amount), 0));
-    if (cl.data) setClaims(cl.data.reduce((s, x) => s + Number(x.amount), 0));
-    if (de.data) setDailyEarnings(de.data as DailyEarningRow[]);
+    if (de.data) {
+      const earnings = de.data as DailyEarningRow[];
+      setDailyEarnings(earnings);
+      setPaidProfit(earnings
+        .filter(earning => earning.added_to_balance || earning.status === "released")
+        .reduce((sum, earning) => sum + Number(earning.amount || 0), 0));
+    }
     if (tx.data) setRecent(tx.data as Tx[]);
   }, []);
 
@@ -249,10 +239,10 @@ function Dashboard() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat icon={Wallet} label="Available balance" value={fmt(availableBalance)} accent />
+        <Stat icon={Wallet} label="Available balance" value={fmt(availableBalance)} sub="Withdrawable funds only" accent />
         <Stat icon={Coins} label="Locked principal" value={fmt(activeMining)} sub={`${active.length} investment${active.length===1?"":"s"}`} />
         <Stat icon={TrendingUp} label="Projected returns" value={fmt(projectedTotal)} sub="From active investments" />
-        <Stat icon={CheckCircle2} label="Matured investments" value={String(matured.length)} sub={`Profit paid ${fmt(claims)}`} />
+        <Stat icon={CheckCircle2} label="Matured investments" value={String(matured.length)} sub={`Profit paid ${fmt(paidProfit)}`} />
         <Stat icon={ArrowDownToLine} label="Total deposits" value={fmt(totalDeposits)} sub={pendingDeposits ? `${pendingDeposits} pending` : undefined} />
         <Stat icon={ArrowUpFromLine} label="Total withdrawals" value={fmt(totalWithdrawals)} sub={pendingWithdrawals ? `${pendingWithdrawals} pending` : undefined} />
         <Stat icon={Users} label="Referral earnings" value={fmt(refEarn)} />

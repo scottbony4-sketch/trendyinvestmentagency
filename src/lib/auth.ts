@@ -27,9 +27,12 @@ export const USD_PLAN_CONFIG = {
 };
 
 export const PLANS = [100, 250, 500];
+export const USD_TO_KES_RATE = Number(import.meta.env.VITE_USD_TO_KES_RATE || 130);
 export const formatCurrency = (n: number | string, digits = 2) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Number(n || 0));
 export const fmt = (n: number | string) => formatCurrency(n, 2);
+export const fmtKes = (n: number | string) =>
+  new Intl.NumberFormat("en-KE", { style: "currency", currency: "KES", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n || 0));
 
 export function useIsAdmin(userId: string | undefined) {
   const [isAdmin, setIsAdmin] = useState(false);

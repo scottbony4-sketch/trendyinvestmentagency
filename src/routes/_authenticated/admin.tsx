@@ -3,11 +3,12 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { ArrowDownToLine, ArrowUpFromLine, BadgeCheck, BarChart3, CircleDollarSign, Clock3, Coins, Lock, TrendingUp, Users, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { fmt } from "@/lib/auth";
+import { fmt, fmtKes, USD_TO_KES_RATE } from "@/lib/auth";
 import { getSiteUrl } from "@/lib/site-url";
 import { sendAccountStatusEmail, sendDepositApprovedEmail, sendDepositRejectedEmail, sendWithdrawalApprovedEmail, sendWithdrawalRejectedEmail, sendWithdrawalPaidEmail } from "@/lib/api/email.functions";
 import { generateDailyEarnings, releaseUnlockedEarnings } from "@/lib/api/earnings.functions";
 import { buildReferralAnalytics } from "@/lib/referral-analytics";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -427,7 +428,7 @@ function AdminPage() {
     { key: "totalPendingWithdrawals", label: "Total Pending Withdrawals", value: moneyData.pendingWithdrawalsTotal, tone: "grey", icon: Clock3, helper: "Awaiting admin action" },
     { key: "totalApprovedWithdrawals", label: "Total Approved Withdrawals", value: moneyData.approvedWithdrawalsTotal, tone: "grey", icon: BadgeCheck, helper: "Approved but not paid" },
     { key: "totalWithdrawalCharges", label: "Total Withdrawal Charges", value: moneyData.totalWithdrawalCharges, tone: "red", icon: ArrowUpFromLine, helper: "Platform fee from withdrawals" },
-    { key: "totalPendingDeposits", label: "Total Pending Deposits", value: moneyData.pendingDepositsTotal, tone: "grey", icon: Clock3, helper: "Awaiting approval" },
+    { key: "totalPendingDeposits", label: "Total Pending Deposits", value: moneyData.pendingDepositsTotal, tone: "grey", icon: Clock3, helper: "Waiting for approval" },
     { key: "totalApprovedDeposits", label: "Total Approved Deposits", value: moneyData.approvedDepositsTotal, tone: "green", icon: BadgeCheck, helper: "Approved and counted" },
     { key: "totalRejectedDeposits", label: "Total Rejected Deposits", value: moneyData.rejectedDepositsTotal, tone: "grey", icon: Clock3, helper: "Not counted as real money" },
     { key: "totalActiveCyclesValue", label: "Total Active Investments Value", value: moneyData.totalActiveCyclesValue, tone: "blue", icon: BarChart3, helper: "Projected value of active investments" },
@@ -1288,7 +1289,7 @@ function WithdrawalsTab({ withdrawals, profiles, settings, onFinalize }: { withd
   }, [page, totalPages]);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr,380px]">
+    <div>
       <div className="space-y-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex flex-wrap gap-2">
@@ -1338,10 +1339,15 @@ function WithdrawalsTab({ withdrawals, profiles, settings, onFinalize }: { withd
                         (() => {
                           const feeEnabled = settings?.withdrawal_fee_enabled !== false;
                           const feePct = feeEnabled ? Number(settings?.withdrawal_fee_percent ?? 20) : 0;
-                          const fee = Math.floor((Number(w.amount) * feePct) / 100);
-                          const netAmount = Math.max(0, Math.floor(Number(w.amount)) - fee);
+                          const requestedAmount = Number(w.amount);
+                          const fee = Number(((requestedAmount * feePct) / 100).toFixed(2));
+                          const netAmount = Number((requestedAmount - fee).toFixed(2));
                           return (
-                            <div className="text-xs text-muted-foreground mt-1">Net: {fmt(netAmount)} ({feePct}% fee)</div>
+                            <div className="mt-1 text-xs text-muted-foreground">
+                              Requested: {fmt(requestedAmount)} ({fmtKes(requestedAmount * USD_TO_KES_RATE)})
+                              <br />
+                              Charge: {fmt(fee)} ({fmtKes(fee * USD_TO_KES_RATE)}) · Net: {fmt(netAmount)} ({fmtKes(netAmount * USD_TO_KES_RATE)}) ({feePct}% fee)
+                            </div>
                           );
                         })()
                       )}
@@ -1375,12 +1381,15 @@ function WithdrawalsTab({ withdrawals, profiles, settings, onFinalize }: { withd
         />
       </div>
 
-      <div className="rounded-2xl border border-border/60 bg-card p-5 h-fit">
-        <h3 className="text-lg font-bold">Finalize payout</h3>
-        {!selected ? (
-          <p className="mt-2 text-sm text-muted-foreground">Select a withdrawal to attach an M-Pesa payment reference and mark it paid.</p>
-        ) : (
-          <div className="mt-4 space-y-4">
+      <Dialog open={Boolean(selected)} onOpenChange={(open) => { if (!open) setSelected(null); }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          {selected && (
+            <>
+              <DialogHeader>
+                <DialogTitle>Finalize payout</DialogTitle>
+                <DialogDescription>Review the withdrawal and enter the M-Pesa payment reference.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
             <div className="rounded-md bg-secondary/40 p-3 text-sm space-y-1">
               <div className="flex justify-between"><span className="text-muted-foreground">User</span><span className="font-semibold">{profiles[selected.user_id]?.full_name || "—"}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Send to</span><span className="font-mono">{selected.mpesa_phone}</span></div>
@@ -1414,10 +1423,11 @@ function WithdrawalsTab({ withdrawals, profiles, settings, onFinalize }: { withd
                 {selected.processed_at && <div className="mt-1">Processed: {new Date(selected.processed_at).toLocaleString()}</div>}
               </div>
             )}
-            <button onClick={() => setSelected(null)} className="w-full text-xs text-muted-foreground hover:text-foreground">Close</button>
-          </div>
-        )}
-      </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

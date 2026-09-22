@@ -84,7 +84,7 @@ function DepositPage() {
     setLoading(false);
     if (error) return toast.error(error.message);
     if (inserted?.id) void sendDepositSubmittedEmail({ data: { depositId: inserted.id } }).catch(() => {});
-    toast.success("Deposit submitted. Awaiting admin approval.");
+    toast.success("Waiting for approval");
     setCode("");
     void refresh();
   };

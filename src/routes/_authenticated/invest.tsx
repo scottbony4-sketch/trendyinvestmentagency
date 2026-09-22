@@ -225,7 +225,7 @@ function InvestPage() {
 
               {paymentMethod === "mpesa" && (
                 <div className="rounded-xl border border-primary/40 bg-primary/5 p-4 text-sm">
-                  After confirming the selected plan, you will be redirected to the M-Pesa deposit flow and the investment will start only after admin approval.
+                  After confirming the selected plan, you will be redirected to the M-Pesa deposit flow and the investment will start after approval.
                 </div>
               )}
 
