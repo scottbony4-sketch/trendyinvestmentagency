@@ -1327,7 +1327,11 @@ function WithdrawalsTab({ withdrawals, profiles, settings, onFinalize }: { withd
                 return (
                   <tr key={w.id} className={`border-t border-border/40 ${selected?.id === w.id ? "bg-primary/5" : ""}`}>
                     <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{new Date(w.created_at).toLocaleString()}</td>
-                    <td className="px-4 py-3">{p?.full_name || "—"}<div className="text-xs text-muted-foreground">Bal: {fmt(p?.balance ?? 0)}</div></td>
+                    <td className="px-4 py-3">
+                      <div className="font-medium">{p?.full_name?.trim() || "Unnamed user"}</div>
+                      <div className="text-xs text-muted-foreground">{p?.phone || w.user_id}</div>
+                      <div className="text-xs text-muted-foreground">Bal: {fmt(p?.balance ?? 0)}</div>
+                    </td>
                     <td className="px-4 py-3 font-medium">
                       {fmt(w.amount)}
                       {typeof settings?.withdrawal_fee_percent !== 'undefined' && (
