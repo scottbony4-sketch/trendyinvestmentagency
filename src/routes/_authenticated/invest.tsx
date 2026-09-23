@@ -108,15 +108,6 @@ function InvestPage() {
   const balanceAvailable = balance >= amount;
   const submitDisabled = loading || !selected || !amountValid || (paymentMethod === "balance" && !balanceAvailable);
 
-  if (isAdmin) {
-    return (
-      <div className="rounded-2xl border border-border/60 bg-card p-6">
-        <h1 className="text-2xl font-bold">Investments unavailable</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Administrators cannot invest in their own account.</p>
-      </div>
-    );
-  }
-
   const proceed = async () => {
     if (!selected) return;
     setError(null);
@@ -165,8 +156,12 @@ function InvestPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-2xl font-bold">Choose an investment plan</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Choose a fixed USD plan and select how to invest.</p>
+        <h1 className="text-2xl font-bold">Investment plans</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {isAdmin
+            ? "Review the active plans available to members."
+            : "Choose a fixed USD plan and select how to invest."}
+        </p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
@@ -196,7 +191,7 @@ function InvestPage() {
         })}
       </div>
 
-      {selected && (
+      {!isAdmin && selected && (
         <div className="grid gap-4 rounded-2xl border border-border/60 bg-card p-6 sm:grid-cols-2">
           <div>
             <label className="text-sm font-medium">Investment amount (USD / KES)</label>

@@ -142,6 +142,7 @@
 
   html {
     scroll-behavior: smooth;
+    font-size: 15px;
   }
 
   body {
@@ -157,8 +158,12 @@
   }
 
   @media (max-width: 640px) {
+    html {
+      font-size: 14px;
+    }
+
     body {
-      font-size: 15px;
+      font-size: 14px;
     }
 
     button,

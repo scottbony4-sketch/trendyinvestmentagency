@@ -17,6 +17,7 @@ function ReferralsPage() {
   const [code, setCode] = useState("");
   const [count, setCount] = useState(0);
   const [earned, setEarned] = useState(0);
+  const [referredUsers, setReferredUsers] = useState<{ id: string; full_name: string | null; phone: string | null }[]>([]);
   const [rows, setRows] = useState<{ id: string; amount: number; percent: number; created_at: string }[]>([]);
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -27,7 +28,7 @@ function ReferralsPage() {
       if (!u.user) return;
       const [p, r, e] = await Promise.all([
         supabase.from("profiles").select("referral_code, full_name").eq("id", u.user.id).maybeSingle(),
-        supabase.from("referrals").select("id", { count: "exact", head: true }).eq("referrer_id", u.user.id),
+        supabase.from("referrals").select("id, referred_id, created_at").eq("referrer_id", u.user.id).order("created_at", { ascending: false }),
         supabase.from("referral_earnings").select("*").eq("referrer_id", u.user.id).order("created_at", { ascending: false }),
       ]);
       let referralCode = normalizeReferralCode(p.data?.referral_code ?? "");
@@ -36,9 +37,53 @@ function ReferralsPage() {
         if (!generationError) referralCode = normalizeReferralCode(generatedCode);
         if (generationError) console.warn("[referrals] failed to persist generated referral code", generationError);
       }
+
+      const referralRows = r.data ?? [];
+      const earningsRows = e.data ?? [];
+      const referralIdList = Array.from(new Set(referralRows.map((row) => row.referred_id).filter(Boolean)));
+      const referredIdsFromEarnings = Array.from(new Set(earningsRows.map((row) => row.referred_id).filter(Boolean)));
+
+      const { data: directReferredProfiles, error: referredProfilesError } = await supabase.rpc(
+        "get_referred_profiles_for_referrer",
+        { p_referrer_id: u.user.id },
+      );
+
+      const invitedProfiles = Array.isArray(directReferredProfiles) ? directReferredProfiles : [];
+      const profileMap = new Map(invitedProfiles.map((profile) => [profile.id, profile]));
+      const referredIds = Array.from(
+        new Set([
+          ...Array.from(profileMap.keys()),
+          ...referralIdList,
+          ...referredIdsFromEarnings,
+        ]),
+      );
+
       setCode(referralCode);
-      setCount(r.count ?? 0);
-      if (e.data) { setRows(e.data); setEarned(e.data.reduce((s, x) => s + Number(x.amount), 0)); }
+      setCount(referredIds.length);
+
+      if (referredIds.length > 0) {
+        setReferredUsers(
+          referredIds.map((id) => ({
+            id,
+            full_name: profileMap.get(id)?.full_name ?? "Referred user",
+            phone: profileMap.get(id)?.phone ?? null,
+          })),
+        );
+      } else {
+        setReferredUsers([]);
+      }
+
+      if (referredProfilesError) {
+        console.warn("[referrals] failed to load invited users", referredProfilesError);
+      }
+
+      if (earningsRows.length) {
+        setRows(earningsRows);
+        setEarned(earningsRows.reduce((s, x) => s + Number(x.amount), 0));
+      } else {
+        setRows([]);
+        setEarned(0);
+      }
     })();
   }, []);
 
@@ -67,39 +112,81 @@ function ReferralsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Referrals</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Earn a bonus every time your referrals deposit.</p>
+      <div className="rounded-2xl border border-border/60 bg-card/80 p-6 shadow-sm backdrop-blur-sm">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-primary/80">Rewards</p>
+        <h1 className="mt-2 text-3xl font-bold tracking-tight">Referrals</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Earn a bonus every time your referrals deposit.</p>
       </div>
+
       <div className="grid gap-3 sm:grid-cols-3">
         <Stat icon={Users} label="Referred users" value={String(count)} />
         <Stat icon={Coins} label="Total earned" value={fmt(earned)} />
         <Stat icon={Coins} label="Your code" value={code || "—"} />
       </div>
-      <div className="rounded-2xl border border-primary/40 bg-primary/5 p-6">
-        <div className="space-y-4">
+
+      <div className="rounded-2xl border border-border/60 bg-card p-6 shadow-sm">
+        <div className="space-y-5">
           <div>
-            <div className="text-sm font-medium">Your referral code</div>
+            <div className="text-sm font-medium text-muted-foreground">Your referral code</div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <code className="flex-1 min-w-0 truncate rounded-md bg-background px-3 py-2 font-mono text-base font-bold text-primary">{code || "—"}</code>
-              <button onClick={copyCode} disabled={!code} className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/20 disabled:opacity-50">
+              <code className="min-w-0 flex-1 truncate rounded-md border border-border bg-background px-3 py-2 font-mono text-base font-bold text-primary">{code || "—"}</code>
+              <button onClick={copyCode} disabled={!code} className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 bg-primary/10 px-4 py-2 text-sm font-semibold text-primary hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50">
                 <Copy className="h-4 w-4" /> Copy code
               </button>
             </div>
           </div>
+
           <div>
-            <div className="text-sm font-medium">Your referral link</div>
+            <div className="text-sm font-medium text-muted-foreground">Your referral link</div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              <code className="flex-1 min-w-0 truncate rounded-md bg-background px-3 py-2 font-mono text-sm">{link}</code>
-              <button onClick={copyLink} className="inline-flex items-center gap-1.5 rounded-md bg-[image:var(--gradient-gold)] px-4 py-2 text-sm font-semibold text-primary-foreground">
+              <code className="min-w-0 flex-1 truncate rounded-md border border-border bg-background px-3 py-2 font-mono text-sm text-foreground">{link}</code>
+              <button onClick={copyLink} className="inline-flex items-center gap-1.5 rounded-md bg-[image:var(--gradient-gold)] px-4 py-2 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-gold)]">
                 <Copy className="h-4 w-4" /> Copy link
               </button>
             </div>
           </div>
         </div>
       </div>
+
+      <section className="rounded-2xl border border-border/60 bg-card p-6 shadow-sm">
+        <div className="mb-4 flex items-center justify-between gap-3 border-b border-border/60 pb-4">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">People invited</p>
+            <h2 className="mt-1 text-xl font-semibold">Referred users</h2>
+          </div>
+          <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-semibold text-primary">{count} total</span>
+        </div>
+
+        {referredUsers.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border bg-background/60 p-5 text-sm text-muted-foreground">
+            No referrals yet. Share your referral link to start earning.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {referredUsers.map((user) => (
+              <div key={user.id} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-background/60 px-3 py-2.5 transition-colors hover:bg-primary/5">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                    {(user.full_name ?? "U").charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold text-foreground">{user.full_name || "Unnamed user"}</div>
+                    <div className="truncate text-xs text-muted-foreground">
+                      {user.phone ? user.phone : "No phone number"}
+                    </div>
+                  </div>
+                </div>
+                <span className="rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-primary">
+                  Invited
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       <section>
-        <h2 className="text-lg font-semibold">Earnings history</h2>
+        <h2 className="text-xl font-semibold">Earnings history</h2>
         <div className="mt-3 overflow-hidden rounded-2xl border border-border/60 bg-card">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">

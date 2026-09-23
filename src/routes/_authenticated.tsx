@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { LayoutDashboard, ArrowDownToLine, ArrowUpFromLine, Shield, LogOut, Sparkles, Users, Receipt, User as UserIcon, Bell, Menu, X } from "lucide-react";
+import { LayoutDashboard, ArrowDownToLine, ArrowUpFromLine, Shield, LogOut, Sparkles, TrendingUp, Users, Receipt, User as UserIcon, Bell, Menu, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 
@@ -58,6 +58,7 @@ function Nav({ isAdmin, email, unread }: { isAdmin: boolean; email: string; unre
   const items = [
     { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { to: "/invest", label: "Invest", icon: Sparkles },
+    { to: "/earnings", label: "Earnings", icon: TrendingUp },
     { to: "/deposit", label: "Deposit", icon: ArrowDownToLine },
     { to: "/withdraw", label: "Withdraw", icon: ArrowUpFromLine },
     { to: "/transactions", label: "History", icon: Receipt },

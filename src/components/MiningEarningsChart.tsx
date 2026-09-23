@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Activity, CircleDollarSign, Clock3, Radio, WalletCards } from "lucide-react";
+import { Activity, CircleDollarSign, Clock3, Mail, Phone, Radio, UserRound, WalletCards } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, ReferenceDot, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { fmt } from "@/lib/auth";
 import { formatCountdown, getInvestmentEarningsSnapshot, getInvestmentAccrualTimeline } from "@/lib/investment-accrual-timeline";
@@ -9,9 +9,10 @@ type Filter = typeof FILTERS[number];
 type Investment = Record<string, unknown> & { id: string; status: string };
 type EarningRow = { investment_id: string; earning_date: string; amount: number; added_to_balance?: boolean };
 
-type Props = { investment: Investment; earningRows: EarningRow[] };
+type UserIdentity = { name: string; phone: string; email: string };
+type Props = { investment: Investment; earningRows: EarningRow[]; user?: UserIdentity };
 
-export function MiningEarningsChart({ investment, earningRows }: Props) {
+export function MiningEarningsChart({ investment, earningRows, user }: Props) {
   const [filter, setFilter] = useState<Filter>("7D");
   const [now, setNow] = useState(() => new Date());
 
@@ -33,6 +34,15 @@ export function MiningEarningsChart({ investment, earningRows }: Props) {
       <div className="border-b border-border p-5 sm:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
+            {user && (
+              <div className="mb-4 rounded-xl border border-primary/20 bg-primary/5 p-3">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-muted-foreground">
+                  <span className="inline-flex items-center gap-1.5 font-semibold text-foreground"><UserRound className="h-3.5 w-3.5 text-primary" /> {user.name}</span>
+                  <span className="inline-flex items-center gap-1.5"><Phone className="h-3.5 w-3.5" /> {user.phone || "No phone number"}</span>
+                  <span className="inline-flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" /> {user.email || "No email address"}</span>
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-2 text-xl font-semibold tracking-tight"><Activity className="h-5 w-5 text-primary" /> Earnings Performance</div>
             <div className={`mt-2 flex items-center gap-2 text-[11px] font-semibold tracking-[0.18em] ${statusColor}`}><span className="h-2 w-2 rounded-full bg-current shadow-[0_0_12px_currentColor]" /> {statusLabel}</div>
           </div>

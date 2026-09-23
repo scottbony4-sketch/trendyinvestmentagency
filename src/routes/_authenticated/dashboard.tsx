@@ -1,21 +1,23 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { Coins, Wallet, TrendingUp, ArrowDownToLine, ArrowUpFromLine, Users, Timer, CheckCircle2, Clock } from "lucide-react";
+import { Coins, Wallet, TrendingUp, ArrowDownToLine, ArrowUpFromLine, Users, Timer, CheckCircle2, Clock, Eye, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { fmt, fmtKes, USD_TO_KES_RATE } from "@/lib/auth";
 import { generateDailyEarnings, releaseUnlockedEarnings } from "@/lib/api/earnings.functions";
 import { aggregateInvestmentEarnings, calculateInvestmentPlanMetrics, getWithdrawalUnlockDate, summarizePortfolioBalance } from "@/lib/investment-withdrawal";
 import { MiningEarningsChart } from "@/components/MiningEarningsChart";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard — TRENDY INVESTMENT AGENCY" }] }),
   component: Dashboard,
 });
 
-type Profile = { balance: number; full_name: string };
+type Profile = { balance: number; full_name: string; phone: string };
+type UserIdentity = { name: string; phone: string; email: string };
 type Investment = {
-  id: string; plan_amount: number; duration_days: number;
+  id: string; user_id: string; plan_amount: number; duration_days: number;
   status: string; created_at: string; plan_id: string | null;
   start_at: string; end_at: string | null;
   projected_payout: number; roi_percent: number;
@@ -28,7 +30,7 @@ type Investment = {
 type DailyEarningRow = {
   id: string; investment_id: string; earning_date: string; amount: number; added_to_balance: boolean; status: string;
 };
-type Tx = { id: string; type: string; amount: number; status: string; description: string; created_at: string };
+type Tx = { id: string; type: string; amount: number; status: string; description: string; reference?: string | null; created_at: string };
 
 const INVESTMENT_STATUS_LABEL: Record<string, string> = {
   pending: "Pending Payment",
@@ -84,25 +86,58 @@ function Dashboard() {
   const [tick, setTick] = useState(0);
   const [earningPage, setEarningPage] = useState(1);
   const [earningRowsPerPage, setEarningRowsPerPage] = useState(10);
+  const [investmentPage, setInvestmentPage] = useState(1);
+  const [investmentRowsPerPage, setInvestmentRowsPerPage] = useState(3);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [chartUsers, setChartUsers] = useState<Record<string, UserIdentity>>({});
+  const [selectedTransaction, setSelectedTransaction] = useState<Tx | null>(null);
+  const [deletingTransactionId, setDeletingTransactionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const { data } = await supabase.from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin").maybeSingle();
+      setIsAdmin(Boolean(data));
+    })();
+  }, []);
 
   const refresh = useCallback(async () => {
     try { await supabase.rpc("mature_investments"); } catch { /* ignore */ }
     const reconciliation = await supabase.rpc("reconcile_available_balance");
     if (reconciliation.error) console.error("Balance reconciliation failed", reconciliation.error);
-    const [p, i, d, w, r, cl, de, tx, ledger] = await Promise.all([
-      supabase.from("profiles").select("balance, full_name").maybeSingle(),
+    const [p, i, d, w, r, de, tx] = await Promise.all([
+      supabase.from("profiles").select("balance, full_name, phone").maybeSingle(),
       supabase.from("investments").select("*").order("created_at", { ascending: false }),
       supabase.from("deposits").select("amount,status"),
       supabase.from("withdrawals").select("amount,status"),
       supabase.from("referral_earnings").select("amount"),
       supabase.from("daily_earnings").select("id, investment_id, earning_date, amount, added_to_balance, status").order("earning_date", { ascending: true }),
-      supabase.from("transactions").select("*").order("created_at", { ascending: false }).limit(8),
-      supabase.from("transactions").select("id, type, amount, status, description, created_at").order("created_at", { ascending: true }),
+      supabase.from("transactions").select("id, type, amount, status, reference, description, created_at").order("created_at", { ascending: false }),
     ]);
     if (p.data) {
       setProfile({ ...p.data, balance: Number(p.data.balance || 0) } as Profile);
     }
-    if (i.data) setInvestments(i.data as Investment[]);
+    if (i.data) {
+      const investmentRows = i.data as Investment[];
+      setInvestments(investmentRows);
+      const userIds = [...new Set(investmentRows.map(investment => investment.user_id))];
+      if (userIds.length > 0) {
+        const { data: ownerRows, error: ownerError } = await (supabase as any).rpc("get_investment_owner_contacts", { _user_ids: userIds });
+        if (ownerError) console.error("Investment owner contacts failed", ownerError);
+        if (ownerRows) {
+          const ownerMap: Record<string, UserIdentity> = {};
+          for (const owner of ownerRows as Array<{ user_id: string; full_name: string | null; phone: string | null; email: string | null }>) {
+            ownerMap[owner.user_id] = {
+              name: owner.full_name || "Unnamed user",
+              phone: owner.phone || "No phone number",
+              email: owner.email || "No email address",
+            };
+          }
+          setChartUsers(ownerMap);
+        }
+      }
+    }
     if (d.data) setDeposits(d.data);
     if (w.data) setWithdrawals(w.data);
     if (r.data) setRefEarn(r.data.reduce((s, x) => s + Number(x.amount), 0));
@@ -227,6 +262,14 @@ function Dashboard() {
   const earningTotalPages = Math.max(1, Math.ceil(sortedDailyEarnings.length / earningRowsPerPage));
   const safeEarningPage = Math.min(earningPage, earningTotalPages);
   const visibleDailyEarnings = sortedDailyEarnings.slice((safeEarningPage - 1) * earningRowsPerPage, safeEarningPage * earningRowsPerPage);
+  const investmentTotalPages = Math.max(1, Math.ceil(investments.length / investmentRowsPerPage));
+  const safeInvestmentPage = Math.min(investmentPage, investmentTotalPages);
+  const visibleInvestments = investments.slice((safeInvestmentPage - 1) * investmentRowsPerPage, safeInvestmentPage * investmentRowsPerPage);
+  const [recentPage, setRecentPage] = useState(1);
+  const [recentRowsPerPage, setRecentRowsPerPage] = useState(5);
+  const recentTotalPages = Math.max(1, Math.ceil(recent.length / recentRowsPerPage));
+  const safeRecentPage = Math.min(recentPage, recentTotalPages);
+  const visibleRecent = recent.slice((safeRecentPage - 1) * recentRowsPerPage, safeRecentPage * recentRowsPerPage);
 
   useEffect(() => {
     setEarningPage(1);
@@ -236,6 +279,36 @@ function Dashboard() {
     if (earningPage > earningTotalPages) setEarningPage(earningTotalPages);
   }, [earningPage, earningTotalPages]);
 
+  useEffect(() => {
+    setInvestmentPage(1);
+  }, [investmentRowsPerPage]);
+
+  useEffect(() => {
+    if (investmentPage > investmentTotalPages) setInvestmentPage(investmentTotalPages);
+  }, [investmentPage, investmentTotalPages]);
+
+  useEffect(() => {
+    setRecentPage(1);
+  }, [recentRowsPerPage]);
+
+  useEffect(() => {
+    if (recentPage > recentTotalPages) setRecentPage(recentTotalPages);
+  }, [recentPage, recentTotalPages]);
+
+  const deleteTransaction = async (transaction: Tx) => {
+    if (!window.confirm("Delete this transaction from your activity history?")) return;
+    setDeletingTransactionId(transaction.id);
+    const { error } = await (supabase as any).rpc("delete_transaction", { p_transaction_id: transaction.id });
+    if (error) {
+      console.error("Transaction deletion failed", error);
+      window.alert(error.message || "Unable to delete this transaction.");
+    } else {
+      setRecent(current => current.filter(row => row.id !== transaction.id));
+      if (selectedTransaction?.id === transaction.id) setSelectedTransaction(null);
+    }
+    setDeletingTransactionId(null);
+  };
+
   return (
     <div className="space-y-8">
       <div>
@@ -244,7 +317,7 @@ function Dashboard() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat icon={Wallet} label="Available balance" value={fmt(availableBalance)} sub="Withdrawable funds only" accent />
+        {!isAdmin && <Stat icon={Wallet} label="Available balance" value={fmt(availableBalance)} sub="Withdrawable funds only" accent />}
         <Stat icon={Coins} label="Locked principal" value={formatInvestmentAmount(activeMining)} sub={`${active.length} investment${active.length===1?"":"s"}`} />
         <Stat icon={TrendingUp} label="Projected returns" value={fmt(projectedTotal)} sub="From active investments" />
         <Stat icon={CheckCircle2} label="Matured investments" value={String(matured.length)} sub={`Profit paid ${fmt(paidProfit)}`} />
@@ -359,7 +432,10 @@ function Dashboard() {
       <section>
         <div className="flex items-end justify-between">
           <h2 className="text-xl font-semibold">Investment earnings</h2>
-          <Link to="/invest" className="text-sm font-medium text-primary hover:underline">+ Start new cycle</Link>
+          <div className="flex items-center gap-3">
+            <Link to="/earnings" className="text-sm font-medium text-primary hover:underline">View all</Link>
+            <Link to="/invest" className="text-sm font-medium text-primary hover:underline">+ Start new cycle</Link>
+          </div>
         </div>
         {investments.length === 0 ? (
           <div className="mt-4 rounded-2xl border border-dashed border-border p-12 text-center text-sm text-muted-foreground">
@@ -367,9 +443,19 @@ function Dashboard() {
           </div>
         ) : (
           <div className="mt-4 space-y-4">
-            {investments.slice(0, 6).map((investment) => (
-              <MiningEarningsChart key={investment.id} investment={investment} earningRows={dailyEarnings} />
+            {visibleInvestments.map((investment) => (
+              <MiningEarningsChart key={investment.id} investment={investment} earningRows={dailyEarnings} user={chartUsers[investment.user_id]} />
             ))}
+            <DataTablePagination
+              page={safeInvestmentPage}
+              totalPages={investmentTotalPages}
+              rowsPerPage={investmentRowsPerPage}
+              onPageChange={setInvestmentPage}
+              onRowsPerPageChange={setInvestmentRowsPerPage}
+              totalItems={investments.length}
+              startIndex={(safeInvestmentPage - 1) * investmentRowsPerPage}
+              endIndex={Math.min(safeInvestmentPage * investmentRowsPerPage, investments.length)}
+            />
           </div>
         )}
       </section>
@@ -383,25 +469,66 @@ function Dashboard() {
           <p className="mt-3 text-sm text-muted-foreground">No activity yet.</p>
         ) : (
           <ul className="mt-4 divide-y divide-border/60 rounded-2xl border border-border/60 bg-card">
-            {recent.map(t => (
-              <li key={t.id} className="flex items-center justify-between gap-3 p-4">
+            {visibleRecent.map(t => (
+              <li key={t.id} className="flex flex-col gap-3 p-4 transition-colors hover:bg-secondary/20 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="grid h-9 w-9 place-items-center rounded-full bg-secondary text-primary">
+                  <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${t.type === "withdrawal" ? "bg-red-500/10 text-red-400" : "bg-emerald-500/10 text-emerald-400"}`}>
                     <Clock className="h-4 w-4" />
                   </div>
-                  <div>
-                    <div className="text-sm font-medium capitalize">{t.type} · {t.description}</div>
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-semibold capitalize">{t.type} <span className="font-normal text-muted-foreground">· {t.description}</span></div>
                     <div className="text-xs text-muted-foreground">{new Date(t.created_at).toLocaleString()}</div>
                   </div>
                 </div>
-                <div className={`text-sm font-semibold ${t.type === "withdrawal" ? "text-red-400" : "text-emerald-400"}`}>
-                  {t.type === "withdrawal" ? "−" : "+"}{fmt(t.amount)}
+                <div className="flex items-center justify-between gap-4 sm:justify-end">
+                  <div className={`text-sm font-bold ${t.type === "withdrawal" ? "text-red-400" : "text-emerald-400"}`}>
+                    {t.type === "withdrawal" ? "−" : "+"}{fmt(t.amount)}
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button type="button" onClick={() => setSelectedTransaction(t)} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground" aria-label={`View ${t.description}`}>
+                      <Eye className="h-3.5 w-3.5" /> View
+                    </button>
+                    <button type="button" onClick={() => void deleteTransaction(t)} disabled={deletingTransactionId === t.id} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-red-400 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50" aria-label={`Delete ${t.description}`}>
+                      <Trash2 className="h-3.5 w-3.5" /> {deletingTransactionId === t.id ? "Deleting" : "Delete"}
+                    </button>
+                  </div>
                 </div>
               </li>
             ))}
           </ul>
         )}
+        {recent.length > 0 && (
+          <DataTablePagination
+            page={safeRecentPage}
+            totalPages={recentTotalPages}
+            rowsPerPage={recentRowsPerPage}
+            onPageChange={setRecentPage}
+            onRowsPerPageChange={setRecentRowsPerPage}
+            totalItems={recent.length}
+            startIndex={(safeRecentPage - 1) * recentRowsPerPage}
+            endIndex={Math.min(safeRecentPage * recentRowsPerPage, recent.length)}
+          />
+        )}
       </section>
+
+      <Dialog open={Boolean(selectedTransaction)} onOpenChange={(open) => { if (!open) setSelectedTransaction(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Transaction details</DialogTitle>
+            <DialogDescription>Review the activity recorded on your account.</DialogDescription>
+          </DialogHeader>
+          {selectedTransaction && (
+            <dl className="grid gap-3 rounded-xl border border-border/60 bg-secondary/20 p-4 text-sm sm:grid-cols-2">
+              <div><dt className="text-xs text-muted-foreground">Type</dt><dd className="mt-1 font-medium capitalize">{selectedTransaction.type}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Amount</dt><dd className="mt-1 font-semibold">{fmt(selectedTransaction.amount)}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Status</dt><dd className="mt-1 capitalize">{selectedTransaction.status}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Date</dt><dd className="mt-1">{new Date(selectedTransaction.created_at).toLocaleString()}</dd></div>
+              <div className="sm:col-span-2"><dt className="text-xs text-muted-foreground">Description</dt><dd className="mt-1">{selectedTransaction.description}</dd></div>
+              {selectedTransaction.reference && <div className="sm:col-span-2"><dt className="text-xs text-muted-foreground">Reference</dt><dd className="mt-1 font-mono text-xs">{selectedTransaction.reference}</dd></div>}
+            </dl>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

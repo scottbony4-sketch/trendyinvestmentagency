@@ -1,12 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { ArrowDownToLine, ArrowUpFromLine, BadgeCheck, BarChart3, CircleDollarSign, Clock3, Coins, Lock, TrendingUp, Users, Wallet } from "lucide-react";
+import { Archive, ArrowDownToLine, ArrowUpFromLine, BadgeCheck, Ban, BarChart3, CircleDollarSign, Clock3, Coins, Eye, Lock, Pencil, Play, Trash2, TrendingUp, Users, Wallet } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { fmt, fmtKes, USD_TO_KES_RATE } from "@/lib/auth";
 import { getSiteUrl } from "@/lib/site-url";
 import { sendAccountStatusEmail, sendDepositApprovedEmail, sendDepositRejectedEmail, sendWithdrawalApprovedEmail, sendWithdrawalRejectedEmail, sendWithdrawalPaidEmail } from "@/lib/api/email.functions";
-import { generateDailyEarnings, releaseUnlockedEarnings } from "@/lib/api/earnings.functions";
 import { buildReferralAnalytics } from "@/lib/referral-analytics";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
@@ -19,7 +18,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
 type DepositRow = { id: string; user_id: string; amount: number; mpesa_code: string; status: string; created_at: string };
 type WithdrawalRow = { id: string; user_id: string; amount: number; fee_amount?: number | null; net_amount?: number | null; mpesa_phone: string; status: string; created_at: string; processed_at: string | null; admin_note: string | null; payout_mpesa_code: string | null };
 type ReferralRow = { id: string; referrer_id: string; referred_id: string; deposit_id: string; amount: number; percent: number; status: string; created_at: string };
-type ProfileLite = { id: string; full_name: string | null; phone: string | null; balance: number; created_at: string; referral_code?: string | null; deleted_at?: string | null; status?: string | null };
+type ProfileLite = { id: string; full_name: string | null; phone: string | null; balance: number; created_at: string; referral_code?: string | null; referred_by?: string | null; deleted_at?: string | null; status?: string | null };
 type ActionRow = { id: string; admin_id: string; target_user_id: string; action: string; amount: number | null; note: string | null; created_at: string };
 type PlanRow = {
   id: string; name: string; slug: string; description: string | null;
@@ -116,13 +115,14 @@ function AdminPage() {
   const [emailLogsRowsPerPage, setEmailLogsRowsPerPage] = useState(10);
   const [referralAnalyticsPage, setReferralAnalyticsPage] = useState(1);
   const [referralAnalyticsRowsPerPage, setReferralAnalyticsRowsPerPage] = useState(10);
+  const [selectedDeposit, setSelectedDeposit] = useState<DepositRow | null>(null);
 
   const refresh = useCallback(async () => {
     const [d, w, i, p, plans, a, r, de, s, emailLogsResult, tx, ur] = await Promise.all([
       supabase.from("deposits").select("*").order("created_at", { ascending: false }),
       supabase.from("withdrawals").select("*").order("created_at", { ascending: false }),
       supabase.from("investments").select("*").order("created_at", { ascending: false }),
-      supabase.from("profiles").select("id, full_name, phone, balance, created_at, referral_code, deleted_at, status").order("created_at", { ascending: false }),
+      supabase.from("profiles").select("id, full_name, phone, balance, created_at, referral_code, referred_by, deleted_at, status").order("created_at", { ascending: false }),
       supabase.from("investment_plans").select("id, name"),
       supabase.from("admin_actions").select("*").order("created_at", { ascending: false }).limit(100),
       supabase.from("referral_earnings").select("*").order("created_at", { ascending: false }),
@@ -200,6 +200,14 @@ function AdminPage() {
     if (status === "rejected") void sendDepositRejectedEmail({ data: { depositId: id } }).catch(() => {});
     void refresh();
   };
+  const deleteDeposit = async (deposit: DepositRow) => {
+    if (!window.confirm("Delete this deposit and its linked investment and referral records?")) return;
+    const { error } = await (supabase as any).rpc("delete_deposit_with_related_data", { p_deposit_id: deposit.id });
+    if (error) { toast.error(error.message || "Unable to delete deposit"); return; }
+    toast.success("Deposit deleted");
+    setSelectedDeposit(null);
+    await refresh();
+  };
   const finalizeWithdrawal = async (id: string, status: "approved" | "rejected", extra: { payout_mpesa_code?: string; admin_note?: string }) => {
     const patch: { status: string; payout_mpesa_code?: string | null; admin_note?: string | null } = { status };
     if (extra.payout_mpesa_code !== undefined) patch.payout_mpesa_code = extra.payout_mpesa_code || null;
@@ -244,6 +252,20 @@ function AdminPage() {
     toast.success("Referral marked as paid");
     void refresh();
   };
+  const unlinkReferredUser = async (userId: string) => {
+    if (!window.confirm("Remove this user's referral link?")) return;
+    const { error } = await supabase.from("profiles").update({ referred_by: null }).eq("id", userId);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Referral link removed");
+    void refresh();
+  };
+  const removeReferralAnalytics = async (referrerId: string | null) => {
+    if (!referrerId || !window.confirm("Remove all users linked to this referral code?")) return;
+    const { error } = await supabase.from("profiles").update({ referred_by: null }).eq("referred_by", referrerId);
+    if (error) { toast.error(error.message); return; }
+    toast.success("Referral links removed");
+    void refresh();
+  };
 
   const pendingDeposits = deposits.filter(d => d.status === "pending").length;
   const pendingWithdrawals = withdrawals.filter(w => w.status === "pending").length;
@@ -254,6 +276,9 @@ function AdminPage() {
     investments,
     investmentPlans,
   }), [referrals, profileList, investments, investmentPlans]);
+  const referredUsers = useMemo(() => profileList
+    .filter((profile) => Boolean(profile.referred_by))
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()), [profileList]);
 
   const depositsTotalPages = Math.max(1, Math.ceil(deposits.length / depositsRowsPerPage));
   const safeDepositsPage = Math.min(depositsPage, depositsTotalPages);
@@ -488,7 +513,7 @@ function AdminPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-                <tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">User</th><th className="px-4 py-3">Amount</th><th className="px-4 py-3">M-Pesa code</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Action</th></tr>
+                <tr><th className="px-4 py-3">Date</th><th className="px-4 py-3">User</th><th className="px-4 py-3">Amount</th><th className="px-4 py-3">M-Pesa code</th><th className="px-4 py-3">Status</th><th className="px-4 py-3 text-right">Actions</th></tr>
               </thead>
               <tbody>
                 {visibleDeposits.map(d => {
@@ -501,12 +526,16 @@ function AdminPage() {
                       <td className="px-4 py-3 font-mono">{d.mpesa_code}</td>
                       <td className="px-4 py-3"><Badge status={d.status} /></td>
                       <td className="px-4 py-3 text-right">
-                        {d.status === "pending" ? (
-                          <div className="inline-flex gap-2">
+                        <div className="flex justify-end gap-1">
+                          <button type="button" onClick={() => setSelectedDeposit(d)} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground"><Eye className="h-3.5 w-3.5" /> View</button>
+                          <button type="button" onClick={() => void deleteDeposit(d)} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-red-400 hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /> Delete</button>
+                          {d.status === "pending" ? (
+                            <div className="inline-flex gap-2">
                             <button onClick={() => updateDeposit(d.id, "approved")} className="rounded-md bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/25">Approve</button>
                             <button onClick={() => updateDeposit(d.id, "rejected")} className="rounded-md bg-red-500/15 px-3 py-1 text-xs font-semibold text-red-400 hover:bg-red-500/25">Reject</button>
-                          </div>
-                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                            </div>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -528,12 +557,31 @@ function AdminPage() {
         </div>
       )}
 
+      <Dialog open={Boolean(selectedDeposit)} onOpenChange={(open) => { if (!open) setSelectedDeposit(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Deposit details</DialogTitle>
+            <DialogDescription>Review the deposit record before taking action.</DialogDescription>
+          </DialogHeader>
+          {selectedDeposit && (
+            <dl className="grid gap-3 rounded-xl border border-border/60 bg-secondary/20 p-4 text-sm sm:grid-cols-2">
+              <div><dt className="text-xs text-muted-foreground">User</dt><dd className="mt-1 font-medium">{profiles[selectedDeposit.user_id]?.full_name || "—"}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Phone</dt><dd className="mt-1">{profiles[selectedDeposit.user_id]?.phone || "—"}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Amount</dt><dd className="mt-1 font-semibold">{fmt(selectedDeposit.amount)}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">M-Pesa code</dt><dd className="mt-1 font-mono text-xs">{selectedDeposit.mpesa_code}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Status</dt><dd className="mt-1 capitalize">{selectedDeposit.status}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Date</dt><dd className="mt-1">{new Date(selectedDeposit.created_at).toLocaleString()}</dd></div>
+            </dl>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {tab === "investments" && (
-        <InvestmentsTab investments={investments} profiles={profiles} plans={investmentPlans} />
+        <InvestmentsTab investments={investments} profiles={profiles} plans={investmentPlans} onRefresh={refresh} />
       )}
 
       {tab === "withdrawals" && (
-        <WithdrawalsTab withdrawals={withdrawals} profiles={profiles} settings={settings} onFinalize={finalizeWithdrawal} />
+        <WithdrawalsTab withdrawals={withdrawals} profiles={profiles} settings={settings} onFinalize={finalizeWithdrawal} onRefresh={refresh} />
       )}
 
       {tab === "users" && <UsersTab users={profileList} roles={userRoles} onDone={refresh} />}
@@ -581,6 +629,58 @@ function AdminPage() {
           <div className="rounded-2xl border border-border/60 bg-card p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
+                <h3 className="text-lg font-bold">People who joined by referral</h3>
+                <p className="mt-1 text-sm text-muted-foreground">Every account linked to a referral code or link, including users who have not deposited yet.</p>
+              </div>
+              <span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">{referredUsers.length} joined</span>
+            </div>
+            <div className="mt-4 overflow-x-auto rounded-2xl border border-border/60">
+              <table className="w-full text-sm">
+                <thead className="bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3">Joined user</th>
+                    <th className="px-4 py-3">Phone</th>
+                    <th className="px-4 py-3">Referred by</th>
+                    <th className="px-4 py-3">Referrer phone</th>
+                    <th className="px-4 py-3">Referral code</th>
+                    <th className="px-4 py-3">Joined</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {referredUsers.map((joinedUser) => {
+                    const referrer = joinedUser.referred_by ? profiles[joinedUser.referred_by] : undefined;
+                    return (
+                      <tr key={joinedUser.id} className="border-t border-border/40">
+                        <td className="px-4 py-3">
+                          <div className="font-medium">{joinedUser.full_name || "Unnamed user"}</div>
+                          <div className="text-xs text-muted-foreground">{joinedUser.id.slice(0, 8)}</div>
+                        </td>
+                        <td className="px-4 py-3">{joinedUser.phone || "—"}</td>
+                        <td className="px-4 py-3">
+                          <div className="font-medium">{referrer?.full_name || "Unknown referrer"}</div>
+                          <div className="text-xs text-muted-foreground">{joinedUser.referred_by?.slice(0, 8) || "—"}</div>
+                        </td>
+                        <td className="px-4 py-3">{referrer?.phone || "—"}</td>
+                        <td className="px-4 py-3 font-mono text-xs">{referrer?.referral_code || "—"}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-muted-foreground">{new Date(joinedUser.created_at).toLocaleDateString()}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex justify-end gap-1">
+                            <button type="button" onClick={() => window.alert(`User: ${joinedUser.full_name || "Unnamed user"}\nPhone: ${joinedUser.phone || "—"}\nReferral code: ${referrer?.referral_code || "—"}`)} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground"><Eye className="h-3.5 w-3.5" /> View</button>
+                            <button type="button" onClick={() => void unlinkReferredUser(joinedUser.id)} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-red-400 hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /> Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {referredUsers.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">No users have joined through a referral yet.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-border/60 bg-card p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
                 <h3 className="text-lg font-bold">Referral link analytics</h3>
                 <p className="mt-1 text-sm text-muted-foreground">See how many users joined through each referral code, which plans they chose, and the total invested amount.</p>
               </div>
@@ -594,10 +694,11 @@ function AdminPage() {
                     <th className="px-4 py-3">Joined users</th>
                     <th className="px-4 py-3">Plans</th>
                     <th className="px-4 py-3">Total invested</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {referralAnalytics.length === 0 && <tr><td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">No referral activity yet.</td></tr>}
+                  {referralAnalytics.length === 0 && <tr><td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">No referral activity yet.</td></tr>}
                   {visibleReferralAnalytics.map((row) => (
                     <tr key={row.referrerId ?? row.referralCode ?? "unknown"} className="border-t border-border/40">
                       <td className="px-4 py-3">
@@ -610,6 +711,12 @@ function AdminPage() {
                         {row.planNames.length > 0 ? <div className="flex flex-wrap gap-1">{row.planNames.map((plan) => <span key={plan} className="rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary">{plan}</span>)}</div> : <span className="text-muted-foreground">No investments yet</span>}
                       </td>
                       <td className="px-4 py-3 font-semibold text-emerald-400">{fmt(row.totalInvestedAmount)}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-1">
+                          <button type="button" onClick={() => window.alert(`Referrer: ${row.referrerName || "Unknown"}\nReferral code: ${row.referralCode || "—"}\nJoined users: ${row.joinedUsers}\nTotal invested: ${fmt(row.totalInvestedAmount)}`)} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground"><Eye className="h-3.5 w-3.5" /> View</button>
+                          <button type="button" onClick={() => void removeReferralAnalytics(row.referrerId)} disabled={!row.referrerId} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-red-400 hover:bg-red-500/10 disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" /> Delete</button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -626,32 +733,13 @@ function AdminPage() {
               endIndex={Math.min(safeReferralAnalyticsPage * referralAnalyticsRowsPerPage, referralAnalytics.length)}
             />
           </div>
-          <ReferralsTab referrals={referrals} profiles={profiles} deposits={deposits} onApprove={updateReferral} onReject={updateReferral} onMarkPaid={markReferralPaid} />
+          <ReferralsTab referrals={referrals} profiles={profiles} deposits={deposits} onApprove={updateReferral} onReject={updateReferral} onMarkPaid={markReferralPaid} onRefresh={refresh} />
         </div>
       )}
 
       {tab === "earnings" && (
         <div className="space-y-4">
-          <div className="rounded-2xl border border-border/60 bg-card p-4">
-            <p className="text-sm text-muted-foreground">Run generation and release for daily earnings. These actions are idempotent and safe to run multiple times.</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <button onClick={async () => {
-                try {
-                  const res = await generateDailyEarnings();
-                  toast.success(`Generated ${res ?? 0} earnings`);
-                  void refresh();
-                } catch (err: any) { toast.error(err?.message || 'Generation failed'); }
-              }} className="rounded-md bg-primary/15 px-3 py-2 text-sm font-semibold">Generate Today</button>
-              <button onClick={async () => {
-                try {
-                  const res = await releaseUnlockedEarnings();
-                  toast.success(`Released ${res ?? 0} earnings`);
-                  void refresh();
-                } catch (err: any) { toast.error(err?.message || 'Release failed'); }
-              }} className="rounded-md bg-emerald-500/15 px-3 py-2 text-sm font-semibold text-emerald-400">Release Unlocked</button>
-            </div>
-          </div>
-          <AdminEarningsTab earnings={dailyEarnings} profiles={profiles} investments={investments} />
+          <AdminEarningsTab earnings={dailyEarnings} profiles={profiles} investments={investments} onRefresh={refresh} />
         </div>
       )}
 
@@ -1129,19 +1217,21 @@ function TabBtn({ active, onClick, label }: { active: boolean; onClick: () => vo
 }
 
 type WithdrawalStatus = "pending" | "approved" | "rejected" | "all";
-type InvestmentStatus = "active" | "completed" | "all";
+type InvestmentStatus = "active" | "paused" | "completed" | "all";
 type PaymentSource = "all" | "mpesa" | "balance";
 
-function InvestmentsTab({ investments, profiles, plans }: {
+function InvestmentsTab({ investments, profiles, plans, onRefresh }: {
   investments: InvestmentRow[];
   profiles: Record<string, ProfileLite>;
   plans: Record<string, string>;
+  onRefresh: () => Promise<void>;
 }) {
   const [status, setStatus] = useState<InvestmentStatus>("all");
   const [source, setSource] = useState<PaymentSource>("all");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [selectedInvestment, setSelectedInvestment] = useState<InvestmentRow | null>(null);
   const query = search.trim().toLowerCase();
   const filtered = investments.filter(inv => {
     if (status !== "all" && inv.status !== status) return false;
@@ -1164,11 +1254,30 @@ function InvestmentsTab({ investments, profiles, plans }: {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
+  const deleteInvestment = async (investment: InvestmentRow) => {
+    if (!window.confirm("Delete this investment and its related earnings?")) return;
+    const { error } = await (supabase as any).rpc("delete_investment_with_related_data", { p_investment_id: investment.id });
+    if (error) { toast.error(error.message || "Unable to delete investment"); return; }
+    toast.success("Investment deleted");
+    setSelectedInvestment(null);
+    await onRefresh();
+  };
+
+  const setInvestmentStatus = async (investment: InvestmentRow) => {
+    const nextStatus = investment.status === "active" ? "paused" : "active";
+    const action = nextStatus === "paused" ? "stop" : "resume";
+    if (!window.confirm(`${action === "stop" ? "Stop" : "Resume"} this investment?`)) return;
+    const { error } = await (supabase as any).rpc("set_investment_status", { p_investment_id: investment.id, p_status: nextStatus });
+    if (error) { toast.error(error.message || `Unable to ${action} investment`); return; }
+    toast.success(`Investment ${nextStatus === "paused" ? "stopped" : "resumed"}`);
+    await onRefresh();
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div className="flex flex-wrap gap-2">
-          {(["all", "active", "completed"] as InvestmentStatus[]).map(s => (
+          {(["all", "active", "paused", "completed"] as InvestmentStatus[]).map(s => (
             <button key={s} onClick={() => setStatus(s)}
               className={`rounded-full px-3 py-1 text-xs font-semibold capitalize transition-colors ${status === s ? "bg-primary text-primary-foreground" : "bg-secondary/50 text-muted-foreground hover:text-foreground"}`}>
               {s} <span className="opacity-70">({investments.filter(i => s === "all" ? true : i.status === s).length})</span>
@@ -1200,13 +1309,17 @@ function InvestmentsTab({ investments, profiles, plans }: {
               <th className="px-4 py-3">Projected payout</th>
               <th className="px-4 py-3">Source</th>
               <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Progress</th>
+              <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
             {visibleInvestments.map(inv => {
               const p = profiles[inv.user_id];
+              const elapsed = Math.max(0, Date.now() - new Date(inv.created_at).getTime());
+              const progress = inv.status === "completed" ? 100 : Math.min(100, Math.round((elapsed / (Math.max(1, inv.duration_days) * 86400000)) * 100));
               return (
-                <tr key={inv.id} className="border-t border-border/40">
+                <tr key={inv.id} className="border-t border-border/40 transition-colors hover:bg-secondary/20">
                   <td className="px-4 py-3 text-muted-foreground">{new Date(inv.created_at).toLocaleString()}</td>
                   <td className="px-4 py-3">{p?.full_name || "—"}<div className="text-xs text-muted-foreground">{p?.phone}</div></td>
                   <td className="px-4 py-3 font-medium">{fmt(inv.plan_amount)}</td>
@@ -1215,10 +1328,22 @@ function InvestmentsTab({ investments, profiles, plans }: {
                   <td className="px-4 py-3 font-medium">{fmt(inv.projected_payout ?? 0)}</td>
                   <td className="px-4 py-3 capitalize">{inv.payment_source === "balance" ? "Account Balance" : "M-Pesa"}</td>
                   <td className="px-4 py-3"><Badge status={inv.status} /></td>
+                  <td className="min-w-36 px-4 py-3">
+                    <div className="flex items-center gap-2"><div className="h-1.5 flex-1 overflow-hidden rounded-full bg-secondary"><div className="h-full rounded-full bg-primary" style={{ width: `${progress}%` }} /></div><span className="text-xs text-muted-foreground">{progress}%</span></div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-1">
+                      <button type="button" onClick={() => setSelectedInvestment(inv)} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground"><Eye className="h-3.5 w-3.5" /> View</button>
+                      {(inv.status === "active" || inv.status === "paused") && <button type="button" onClick={() => void setInvestmentStatus(inv)} className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold ${inv.status === "active" ? "text-amber-400 hover:bg-amber-500/10" : "text-emerald-400 hover:bg-emerald-500/10"}`}>
+                        {inv.status === "active" ? <Lock className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />} {inv.status === "active" ? "Stop" : "Resume"}
+                      </button>}
+                      <button type="button" onClick={() => void deleteInvestment(inv)} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-red-400 hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /> Delete</button>
+                    </div>
+                  </td>
                 </tr>
               );
             })}
-            {filtered.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">No investments found.</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">No investments found.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -1232,11 +1357,31 @@ function InvestmentsTab({ investments, profiles, plans }: {
         startIndex={(safePage - 1) * rowsPerPage}
         endIndex={Math.min(safePage * rowsPerPage, filtered.length)}
       />
+      <Dialog open={Boolean(selectedInvestment)} onOpenChange={(open) => { if (!open) setSelectedInvestment(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Investment details</DialogTitle>
+            <DialogDescription>Review the investment and its current progress.</DialogDescription>
+          </DialogHeader>
+          {selectedInvestment && (
+            <dl className="grid gap-3 rounded-xl border border-border/60 bg-secondary/20 p-4 text-sm sm:grid-cols-2">
+              <div><dt className="text-xs text-muted-foreground">User</dt><dd className="mt-1 font-medium">{profiles[selectedInvestment.user_id]?.full_name || "—"}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Phone</dt><dd className="mt-1">{profiles[selectedInvestment.user_id]?.phone || "—"}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Investment</dt><dd className="mt-1 font-semibold">{fmt(selectedInvestment.plan_amount)}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Projected payout</dt><dd className="mt-1 font-semibold">{fmt(selectedInvestment.projected_payout ?? 0)}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Plan</dt><dd className="mt-1">{plans[selectedInvestment.plan_id ?? ""] || "—"}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Status</dt><dd className="mt-1 capitalize">{selectedInvestment.status}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Started</dt><dd className="mt-1">{new Date(selectedInvestment.created_at).toLocaleString()}</dd></div>
+              <div><dt className="text-xs text-muted-foreground">Duration</dt><dd className="mt-1">{selectedInvestment.duration_days} days</dd></div>
+            </dl>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
 
-function WithdrawalsTab({ withdrawals, profiles, settings, onFinalize }: { withdrawals: WithdrawalRow[]; profiles: Record<string, ProfileLite>; settings: AppSettingsRow | null; onFinalize: (id: string, status: "approved" | "rejected", extra: { payout_mpesa_code?: string; admin_note?: string }) => Promise<void>; }) {
+function WithdrawalsTab({ withdrawals, profiles, settings, onFinalize, onRefresh }: { withdrawals: WithdrawalRow[]; profiles: Record<string, ProfileLite>; settings: AppSettingsRow | null; onFinalize: (id: string, status: "approved" | "rejected", extra: { payout_mpesa_code?: string; admin_note?: string }) => Promise<void>; onRefresh: () => Promise<void>; }) {
   const [filter, setFilter] = useState<WithdrawalStatus>("pending");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<WithdrawalRow | null>(null);
@@ -1284,6 +1429,15 @@ function WithdrawalsTab({ withdrawals, profiles, settings, onFinalize }: { withd
     await onFinalize(selected.id, "rejected", { admin_note: note.trim() });
     setBusy(false);
     setSelected(null); setPayCode(""); setNote("");
+  };
+
+  const deleteWithdrawal = async (withdrawal: WithdrawalRow) => {
+    if (!window.confirm("Delete this withdrawal record?")) return;
+    const { error } = await (supabase as any).rpc("delete_withdrawal_record", { p_withdrawal_id: withdrawal.id });
+    if (error) { toast.error(error.message || "Unable to delete withdrawal"); return; }
+    toast.success("Withdrawal deleted");
+    if (selected?.id === withdrawal.id) setSelected(null);
+    await onRefresh();
   };
 
   const total = filtered.reduce((s, w) => s + Number(w.amount), 0);
@@ -1372,11 +1526,14 @@ function WithdrawalsTab({ withdrawals, profiles, settings, onFinalize }: { withd
                     <td className="px-4 py-3"><Badge status={w.status} />{w.processed_at && <div className="mt-1 text-[10px] text-muted-foreground">{new Date(w.processed_at).toLocaleString()}</div>}</td>
                     <td className="px-4 py-3 font-mono text-xs">{w.payout_mpesa_code || <span className="text-muted-foreground">—</span>}</td>
                     <td className="px-4 py-3 text-right">
-                      {w.status === "pending" ? (
-                        <button onClick={() => openFor(w)} className="rounded-md bg-primary/15 px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/25">Process</button>
-                      ) : (
-                        <button onClick={() => openFor(w)} className="text-xs text-muted-foreground hover:text-foreground">View</button>
-                      )}
+                      <div className="flex justify-end gap-1">
+                        {w.status === "pending" ? (
+                          <button onClick={() => openFor(w)} className="rounded-md bg-primary/15 px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/25">Process</button>
+                        ) : (
+                          <button onClick={() => openFor(w)} className="rounded-md px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground">View</button>
+                        )}
+                        <button type="button" onClick={() => void deleteWithdrawal(w)} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-red-400 hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /> Delete</button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -1450,7 +1607,7 @@ function WithdrawalsTab({ withdrawals, profiles, settings, onFinalize }: { withd
   );
 }
 
-function ReferralsTab({ referrals, profiles, deposits, onApprove, onReject, onMarkPaid }: { referrals: ReferralRow[]; profiles: Record<string, ProfileLite>; deposits: DepositRow[]; onApprove: (id: string, status: "approved" | "rejected") => Promise<void>; onReject: (id: string, status: "approved" | "rejected") => Promise<void>; onMarkPaid: (id: string) => Promise<void>; }) {
+function ReferralsTab({ referrals, profiles, deposits, onApprove, onReject, onMarkPaid, onRefresh }: { referrals: ReferralRow[]; profiles: Record<string, ProfileLite>; deposits: DepositRow[]; onApprove: (id: string, status: "approved" | "rejected") => Promise<void>; onReject: (id: string, status: "approved" | "rejected") => Promise<void>; onMarkPaid: (id: string) => Promise<void>; onRefresh: () => Promise<void>; }) {
   const [q, setQ] = useState("");
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -1498,16 +1655,19 @@ function ReferralsTab({ referrals, profiles, deposits, onApprove, onReject, onMa
                   <td className="px-4 py-3 font-medium">{fmt(r.amount)}</td>
                   <td className="px-4 py-3"><span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${r.status === 'approved' ? 'bg-emerald-500/15 text-emerald-400' : r.status === 'paid' ? 'bg-primary/15 text-primary' : r.status === 'rejected' ? 'bg-red-500/15 text-red-400' : 'bg-yellow-500/15 text-yellow-400'}`}>{r.status}</span></td>
                   <td className="px-4 py-3 text-right">
-                    {r.status === 'pending' && (
-                      <div className="inline-flex gap-2">
+                    <div className="flex justify-end gap-1">
+                      <button type="button" onClick={() => window.alert(`Referrer: ${ref?.full_name || "—"}\nReferred: ${referred?.full_name || "—"}\nDeposit: ${dep ? fmt(dep.amount) : r.deposit_id}\nCommission: ${fmt(r.amount)}\nStatus: ${r.status}`)} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground"><Eye className="h-3.5 w-3.5" /> View</button>
+                      <button type="button" onClick={async () => { if (!window.confirm("Delete this referral reward?")) return; const { error } = await (supabase as any).rpc("delete_referral_reward", { p_referral_id: r.id }); if (error) toast.error(error.message); else { toast.success("Referral reward deleted"); await onRefresh(); } }} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-red-400 hover:bg-red-500/10"><Trash2 className="h-3.5 w-3.5" /> Delete</button>
+                      {r.status === 'pending' && (
+                        <div className="inline-flex gap-2">
                         <button onClick={() => onApprove(r.id, 'approved')} className="rounded-md bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/25">Approve</button>
                         <button onClick={() => onReject(r.id, 'rejected')} className="rounded-md bg-red-500/15 px-3 py-1 text-xs font-semibold text-red-400 hover:bg-red-500/25">Reject</button>
-                      </div>
-                    )}
+                        </div>
+                      )}
                     {r.status === 'approved' && (
                       <button onClick={() => onMarkPaid(r.id)} className="rounded-md bg-[image:var(--gradient-gold)] px-3 py-1 text-xs font-semibold text-primary-foreground shadow-[var(--shadow-gold)]">Mark paid</button>
                     )}
-                    {(r.status === 'paid' || r.status === 'rejected') && <span className="text-xs text-muted-foreground">—</span>}
+                    </div>
                   </td>
                 </tr>
               );
@@ -1530,13 +1690,15 @@ function ReferralsTab({ referrals, profiles, deposits, onApprove, onReject, onMa
   );
 }
 
-function AdminEarningsTab({ earnings, profiles, investments }: { earnings: DailyEarningAdminRow[]; profiles: Record<string, ProfileLite>; investments: InvestmentRow[] }) {
+function AdminEarningsTab({ earnings, profiles, investments, onRefresh }: { earnings: DailyEarningAdminRow[]; profiles: Record<string, ProfileLite>; investments: InvestmentRow[]; onRefresh: () => Promise<void> }) {
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [planFilter, setPlanFilter] = useState("all");
   const [selectedDate, setSelectedDate] = useState("");
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [selectedEarning, setSelectedEarning] = useState<DailyEarningAdminRow | null>(null);
+  const [deletingEarningId, setDeletingEarningId] = useState<string | null>(null);
 
   const filtered = earnings.filter(row => {
     const profile = profiles[row.user_id];
@@ -1560,6 +1722,20 @@ function AdminEarningsTab({ earnings, profiles, investments }: { earnings: Daily
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
+
+  const deleteEarning = async (earning: DailyEarningAdminRow) => {
+    if (!window.confirm("Delete this daily earning? Released earnings will be reversed from the balance.")) return;
+    setDeletingEarningId(earning.id);
+    const { error } = await (supabase as any).rpc("delete_daily_earning", { p_earning_id: earning.id });
+    if (error) {
+      toast.error(error.message || "Unable to delete this daily earning.");
+    } else {
+      toast.success("Daily earning deleted.");
+      setSelectedEarning(null);
+      void onRefresh();
+    }
+    setDeletingEarningId(null);
+  };
 
   return (
     <div className="space-y-4">
@@ -1585,6 +1761,7 @@ function AdminEarningsTab({ earnings, profiles, investments }: { earnings: Daily
               <th className="px-4 py-3">Earned so far</th>
               <th className="px-4 py-3">Remaining</th>
               <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3 text-right">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -1595,7 +1772,7 @@ function AdminEarningsTab({ earnings, profiles, investments }: { earnings: Daily
               const totalForCycle = earnings.filter(e => e.investment_id === row.investment_id).reduce((sum, e) => sum + Number(e.amount), 0);
               const remainingForCycle = Math.max(0, (investment?.projected_payout ?? 0) - Number(investment?.plan_amount ?? 0) - totalForCycle);
               return (
-                <tr key={row.id} className="border-t border-border/40">
+                <tr key={row.id} className="border-t border-border/40 transition-colors hover:bg-secondary/20">
                   <td className="px-4 py-3">{profile?.full_name || "—"}<div className="text-xs text-muted-foreground">{profile?.phone}</div></td>
                   <td className="px-4 py-3">{planLabel}</td>
                   <td className="px-4 py-3">{fmt(Number(investment?.plan_amount ?? 0))}</td>
@@ -1603,10 +1780,20 @@ function AdminEarningsTab({ earnings, profiles, investments }: { earnings: Daily
                   <td className="px-4 py-3">{fmt(totalForCycle)}</td>
                   <td className="px-4 py-3">{fmt(remainingForCycle)}</td>
                   <td className="px-4 py-3"><span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${row.status === 'released' ? 'bg-emerald-500/15 text-emerald-400' : 'bg-yellow-500/15 text-yellow-400'}`}>{row.status}</span></td>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-1">
+                      <button type="button" onClick={() => setSelectedEarning(row)} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground" aria-label="View daily earning">
+                        <Eye className="h-3.5 w-3.5" /> View
+                      </button>
+                      <button type="button" onClick={() => void deleteEarning(row)} disabled={deletingEarningId === row.id} className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold text-red-400 hover:bg-red-500/10 disabled:cursor-not-allowed disabled:opacity-50" aria-label="Delete daily earning">
+                        <Trash2 className="h-3.5 w-3.5" /> {deletingEarningId === row.id ? "Deleting" : "Delete"}
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               );
             })}
-            {filtered.length === 0 && <tr><td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">No daily earnings found.</td></tr>}
+            {filtered.length === 0 && <tr><td colSpan={8} className="px-4 py-8 text-center text-muted-foreground">No daily earnings found.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -1620,6 +1807,29 @@ function AdminEarningsTab({ earnings, profiles, investments }: { earnings: Daily
         startIndex={(safePage - 1) * rowsPerPage}
         endIndex={Math.min(safePage * rowsPerPage, filtered.length)}
       />
+      <Dialog open={Boolean(selectedEarning)} onOpenChange={(open) => { if (!open) setSelectedEarning(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Daily earning details</DialogTitle>
+            <DialogDescription>Review the earning record and its investment.</DialogDescription>
+          </DialogHeader>
+          {selectedEarning && (() => {
+            const profile = profiles[selectedEarning.user_id];
+            const investment = investments.find(inv => inv.id === selectedEarning.investment_id);
+            return (
+              <dl className="grid gap-3 rounded-xl border border-border/60 bg-secondary/20 p-4 text-sm sm:grid-cols-2">
+                <div><dt className="text-xs text-muted-foreground">User</dt><dd className="mt-1 font-medium">{profile?.full_name || "—"}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Phone</dt><dd className="mt-1">{profile?.phone || "—"}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Investment</dt><dd className="mt-1">{fmt(Number(investment?.plan_amount ?? 0))}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Daily earning</dt><dd className="mt-1 font-semibold">{fmt(selectedEarning.amount)}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Earning date</dt><dd className="mt-1">{selectedEarning.earning_date}</dd></div>
+                <div><dt className="text-xs text-muted-foreground">Status</dt><dd className="mt-1 capitalize">{selectedEarning.status}</dd></div>
+                <div className="sm:col-span-2"><dt className="text-xs text-muted-foreground">Investment ID</dt><dd className="mt-1 break-all font-mono text-xs">{selectedEarning.investment_id}</dd></div>
+              </dl>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1991,38 +2201,56 @@ function PlansTab({ investments, dailyEarnings, withdrawals, referrals, deposits
             {!isSuperAdmin && <p className="mt-2 text-xs text-muted-foreground">Only super admins can execute this destructive action.</p>}
           </div>
         )}
-        <div className="overflow-x-auto rounded-2xl border border-border/60">
-          <table className="w-full text-sm">
-            <thead className="bg-secondary/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
+        <div className="overflow-x-auto rounded-2xl border border-border/60 bg-card shadow-sm">
+          <table className="w-full min-w-[920px] text-sm">
+            <thead className="border-b border-border/60 bg-secondary/30 text-left text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
               <tr>
-                <th className="px-4 py-3">Order</th><th className="px-4 py-3">Name</th><th className="px-4 py-3">Amounts</th>
-                <th className="px-4 py-3">ROI</th><th className="px-4 py-3">Days</th><th className="px-4 py-3">Unlock</th><th className="px-4 py-3">Active</th>
-                <th className="px-4 py-3 text-right">Action</th>
+                <th className="w-20 px-5 py-4">Order</th>
+                <th className="px-5 py-4">Plan</th>
+                <th className="px-5 py-4">Amounts</th>
+                <th className="px-5 py-4">ROI</th>
+                <th className="px-5 py-4">Term</th>
+                <th className="px-5 py-4">Unlock</th>
+                <th className="px-5 py-4">Status</th>
+                <th className="px-5 py-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {visiblePlans.map(p => (
-                <tr key={p.id} className="border-t border-border/40">
-                  <td className="px-4 py-3 text-muted-foreground">{p.sort_order}</td>
-                  <td className="px-4 py-3">
-                    <div className="font-semibold" style={{ color: p.color || undefined }}>{p.name}</div>
-                    <div className="text-xs text-muted-foreground">{p.slug}</div>
+                <tr key={p.id} className="border-t border-border/40 transition-colors hover:bg-secondary/20">
+                  <td className="px-5 py-4 align-middle text-muted-foreground">
+                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-secondary text-xs font-bold">{p.sort_order}</span>
                   </td>
-                  <td className="px-4 py-3 text-xs">{p.amount_presets && p.amount_presets.length ? p.amount_presets.join(", ") : `${fmt(p.min_amount)}+`}</td>
-                  <td className="px-4 py-3 font-medium">{Math.round(Number(p.roi_percent ?? p.daily_return_percent ?? 0))}%</td>
-                  <td className="px-4 py-3">{p.duration_days}</td>
-                  <td className="px-4 py-3">{p.unlock_day ?? 1}</td>
-                  <td className="px-4 py-3">
-                    <button onClick={() => disable(p)} className={`rounded-full px-2 py-0.5 text-xs font-semibold ${p.is_active ? "bg-emerald-500/15 text-emerald-400" : "bg-muted text-muted-foreground"}`}>
+                  <td className="px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      <span className="h-9 w-1 rounded-full" style={{ backgroundColor: p.color || "var(--primary)" }} />
+                      <div>
+                        <div className="font-semibold text-foreground">{p.name}</div>
+                        <div className="mt-0.5 text-xs text-muted-foreground">{p.slug}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-5 py-4">
+                    <div className="font-semibold text-foreground">{p.amount_presets && p.amount_presets.length ? p.amount_presets.map(amount => fmt(amount)).join(" · ") : `${fmt(p.min_amount)}+`}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">USD investment</div>
+                  </td>
+                  <td className="px-5 py-4"><span className="inline-flex rounded-full bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary">{Math.round(Number(p.roi_percent ?? p.daily_return_percent ?? 0))}%</span></td>
+                  <td className="px-5 py-4"><span className="font-medium">{p.duration_days}</span> <span className="text-xs text-muted-foreground">days</span></td>
+                  <td className="px-5 py-4"><span className="font-medium">Day {p.unlock_day ?? 1}</span></td>
+                  <td className="px-5 py-4">
+                    <button onClick={() => disable(p)} title={p.is_active ? "Disable plan" : "Disabled plan"} className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${p.is_active ? "bg-emerald-500/15 text-emerald-400" : "bg-muted text-muted-foreground"}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${p.is_active ? "bg-emerald-400" : "bg-muted-foreground"}`} />
                       {p.is_active ? "Active" : p.archived_at ? "Archived" : "Disabled"}
                     </button>
                   </td>
-                  <td className="px-4 py-3 text-right space-x-2">
-                    <button onClick={() => setEditing(p)} className="rounded-md bg-primary/15 px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/25">View</button>
-                    <button onClick={() => setEditing(p)} className="rounded-md bg-amber-500/15 px-3 py-1 text-xs font-semibold text-amber-400 hover:bg-amber-500/25">Edit</button>
-                    <button onClick={() => disable(p)} className="rounded-md bg-slate-500/15 px-3 py-1 text-xs font-semibold text-slate-300 hover:bg-slate-500/25">Disable</button>
-                    <button onClick={() => archive(p)} className="rounded-md bg-amber-500/15 px-3 py-1 text-xs font-semibold text-amber-400 hover:bg-amber-500/25">Archive</button>
-                    <button onClick={() => requestDelete(p)} disabled={!isSuperAdmin} className="rounded-md bg-red-500/15 px-3 py-1 text-xs font-semibold text-red-400 hover:bg-red-500/25 disabled:cursor-not-allowed disabled:opacity-50">Delete</button>
+                  <td className="px-5 py-4">
+                    <div className="flex justify-end gap-1.5">
+                      <button onClick={() => setEditing(p)} title="View plan" aria-label={`View ${p.name} plan`} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:border-primary/40 hover:text-primary"><Eye className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => setEditing(p)} title="Edit plan" aria-label={`Edit ${p.name} plan`} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:border-amber-500/40 hover:text-amber-400"><Pencil className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => disable(p)} title="Disable plan" aria-label={`Disable ${p.name} plan`} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:border-slate-400/40 hover:text-slate-300"><Ban className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => archive(p)} title="Archive plan" aria-label={`Archive ${p.name} plan`} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:border-amber-500/40 hover:text-amber-400"><Archive className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => requestDelete(p)} disabled={!isSuperAdmin} title="Delete plan" aria-label={`Delete ${p.name} plan`} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-background text-muted-foreground transition-colors hover:border-red-500/40 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-40"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
                   </td>
                 </tr>
               ))}
