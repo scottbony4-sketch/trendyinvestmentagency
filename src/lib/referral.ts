@@ -1,5 +1,15 @@
 export function normalizeReferralCode(value: string) {
-  return String(value ?? "")
+  const rawValue = String(value ?? "").trim();
+  let valueToNormalize = rawValue;
+
+  try {
+    const url = new URL(rawValue);
+    valueToNormalize = url.searchParams.get("ref") || url.searchParams.get("referral_code") || rawValue;
+  } catch {
+    // The input is a code rather than a complete URL.
+  }
+
+  return valueToNormalize
     .trim()
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, "");

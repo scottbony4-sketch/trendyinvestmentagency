@@ -10,6 +10,7 @@ import {
 test('normalizeReferralCode trims and uppercases values', () => {
   assert.equal(normalizeReferralCode('  abcd-1234  '), 'ABCD1234');
   assert.equal(normalizeReferralCode('  jane@doe  '), 'JANEDOE');
+  assert.equal(normalizeReferralCode('https://example.com/signup?ref=abcd-1234'), 'ABCD1234');
 });
 
 test('generateReferralCodeFromName keeps a valid user prefix and four-digit suffix', () => {

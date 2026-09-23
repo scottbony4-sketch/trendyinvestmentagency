@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Copy, Users, Coins } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { fmt } from "@/lib/auth";
-import { buildReferralLink, generateReferralCodeFromName, normalizeReferralCode } from "@/lib/referral";
+import { buildReferralLink, normalizeReferralCode } from "@/lib/referral";
 import { getSiteUrl } from "@/lib/site-url";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 
@@ -32,12 +32,9 @@ function ReferralsPage() {
       ]);
       let referralCode = normalizeReferralCode(p.data?.referral_code ?? "");
       if (!referralCode && p.data?.full_name) {
-        referralCode = normalizeReferralCode(generateReferralCodeFromName(p.data.full_name));
-        try {
-          await supabase.from("profiles").update({ referral_code: referralCode }).eq("id", u.user.id);
-        } catch (error) {
-          console.warn("[referrals] failed to persist generated referral code", error);
-        }
+        const { data: generatedCode, error: generationError } = await supabase.rpc("get_or_create_referral_code");
+        if (!generationError) referralCode = normalizeReferralCode(generatedCode);
+        if (generationError) console.warn("[referrals] failed to persist generated referral code", generationError);
       }
       setCode(referralCode);
       setCount(r.count ?? 0);
