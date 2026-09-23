@@ -17,12 +17,18 @@ function LoginPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
-    if (error) return toast.error(error.message);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) return toast.error(error.message);
 
-    toast.success("Welcome back!");
-    navigate({ to: "/dashboard" });
+      toast.success("Welcome back!");
+      await navigate({ to: "/dashboard" });
+    } catch (error) {
+      console.error("[login] sign-in failed", error);
+      toast.error(error instanceof Error ? error.message : "Unable to log in. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
