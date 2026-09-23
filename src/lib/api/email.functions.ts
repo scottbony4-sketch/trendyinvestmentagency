@@ -203,7 +203,7 @@ export const sendWithdrawalRequestedEmail = createServerFn({ method: "POST" })
     const userId = (w as any).user_id;
     const { data: appSettings } = await supabaseAdmin.from("app_settings").select("withdrawal_fee_enabled, withdrawal_fee_percent").eq("id", 1).maybeSingle();
     const feeEnabled = (appSettings as any)?.withdrawal_fee_enabled !== false;
-    const feePct = feeEnabled ? Number((appSettings as any)?.withdrawal_fee_percent ?? 20) : 0;
+    const feePct = feeEnabled ? Number((appSettings as any)?.withdrawal_fee_percent ?? 5) : 0;
     const gross = Number((w as any).amount);
     const fee = Math.floor((gross * feePct) / 100);
     const net = Math.max(0, Math.floor(gross) - fee);
@@ -220,7 +220,7 @@ export const sendWithdrawalApprovedEmail = createServerFn({ method: "POST" })
     const userId = (w as any).user_id;
     const { data: appSettings } = await supabaseAdmin.from("app_settings").select("withdrawal_fee_enabled, withdrawal_fee_percent").eq("id", 1).maybeSingle();
     const feeEnabled = (appSettings as any)?.withdrawal_fee_enabled !== false;
-    const feePct = feeEnabled ? Number((appSettings as any)?.withdrawal_fee_percent ?? 20) : 0;
+    const feePct = feeEnabled ? Number((appSettings as any)?.withdrawal_fee_percent ?? 5) : 0;
     const gross = Number((w as any).amount);
     const fee = Math.floor((gross * feePct) / 100);
     const net = Math.max(0, Math.floor(gross) - fee);
@@ -248,7 +248,7 @@ export const sendWithdrawalPaidEmail = createServerFn({ method: "POST" })
     const userId = (w as any).user_id;
     const { data: appSettings } = await supabaseAdmin.from("app_settings").select("withdrawal_fee_enabled, withdrawal_fee_percent").eq("id", 1).maybeSingle();
     const feeEnabled = (appSettings as any)?.withdrawal_fee_enabled !== false;
-    const feePct = feeEnabled ? Number((appSettings as any)?.withdrawal_fee_percent ?? 20) : 0;
+    const feePct = feeEnabled ? Number((appSettings as any)?.withdrawal_fee_percent ?? 5) : 0;
     const gross = Number((w as any).amount);
     const fee = Math.floor((gross * feePct) / 100);
     const net = Math.max(0, Math.floor(gross) - fee);

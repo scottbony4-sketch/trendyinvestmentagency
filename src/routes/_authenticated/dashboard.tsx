@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, useCallback, useMemo } from "react";
 import { Coins, Wallet, TrendingUp, ArrowDownToLine, ArrowUpFromLine, Users, Timer, CheckCircle2, Clock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { fmt } from "@/lib/auth";
+import { fmt, fmtKes, USD_TO_KES_RATE } from "@/lib/auth";
 import { generateDailyEarnings, releaseUnlockedEarnings } from "@/lib/api/earnings.functions";
 import { aggregateInvestmentEarnings, calculateInvestmentPlanMetrics, getWithdrawalUnlockDate, summarizePortfolioBalance } from "@/lib/investment-withdrawal";
 import { MiningEarningsChart } from "@/components/MiningEarningsChart";
@@ -37,6 +37,11 @@ const INVESTMENT_STATUS_LABEL: Record<string, string> = {
   paused: "Paused",
   cancelled: "Cancelled",
 };
+
+function formatInvestmentAmount(amount: number | string) {
+  const usd = Number(amount || 0);
+  return `${fmt(usd)} (${fmtKes(usd * USD_TO_KES_RATE)})`;
+}
 
 function statusColor(s: string) {
   switch (s) {
@@ -240,13 +245,13 @@ function Dashboard() {
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Stat icon={Wallet} label="Available balance" value={fmt(availableBalance)} sub="Withdrawable funds only" accent />
-        <Stat icon={Coins} label="Locked principal" value={fmt(activeMining)} sub={`${active.length} investment${active.length===1?"":"s"}`} />
+        <Stat icon={Coins} label="Locked principal" value={formatInvestmentAmount(activeMining)} sub={`${active.length} investment${active.length===1?"":"s"}`} />
         <Stat icon={TrendingUp} label="Projected returns" value={fmt(projectedTotal)} sub="From active investments" />
         <Stat icon={CheckCircle2} label="Matured investments" value={String(matured.length)} sub={`Profit paid ${fmt(paidProfit)}`} />
         <Stat icon={ArrowDownToLine} label="Total deposits" value={fmt(totalDeposits)} sub={pendingDeposits ? `${pendingDeposits} pending` : undefined} />
         <Stat icon={ArrowUpFromLine} label="Total withdrawals" value={fmt(totalWithdrawals)} sub={pendingWithdrawals ? `${pendingWithdrawals} pending` : undefined} />
         <Stat icon={Users} label="Referral earnings" value={fmt(refEarn)} />
-        <Stat icon={Timer} label="Next maturity" value={nextMature ? remaining(active.find(a=>a.id===nextMature.id)?.end_at ?? null).text : "—"} sub={nextMature ? fmt(nextMature.amount) : "No active investment"} />
+        <Stat icon={Timer} label="Next maturity" value={nextMature ? remaining(active.find(a=>a.id===nextMature.id)?.end_at ?? null).text : "—"} sub={nextMature ? formatInvestmentAmount(nextMature.amount) : "No active investment"} />
       </div>
 
       {dailySummary && (
@@ -294,7 +299,7 @@ function Dashboard() {
                       <tr key={row.id} className="border-t border-border/40">
                         <td className="px-4 py-3 text-muted-foreground">{row.earning_date}</td>
                         <td className="px-4 py-3">{planLabel}</td>
-                        <td className="px-4 py-3">{fmt(Number(investment?.plan_amount ?? 0))}</td>
+                        <td className="px-4 py-3">{formatInvestmentAmount(Number(investment?.plan_amount ?? 0))}</td>
                         <td className="px-4 py-3 font-medium">{fmt(row.amount)}</td>
                         <td className="px-4 py-3 capitalize">{row.status}</td>
                         <td className="px-4 py-3">{row.added_to_balance ? "Yes" : "No"}</td>
@@ -339,6 +344,7 @@ function Dashboard() {
                   </span>
                 </div>
                 <div className="mt-3 grid gap-2 text-xs text-muted-foreground sm:grid-cols-3">
+                  <div>Investment amount: {formatInvestmentAmount(inv.plan_amount)}</div>
                   <div>Accrued profit: {fmt(inv.accumulated)}</div>
                   <div>Paid profit: {fmt(inv.withdrawable)}</div>
                   <div>Locked profit: {fmt(inv.locked)}</div>

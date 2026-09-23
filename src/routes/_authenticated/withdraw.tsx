@@ -72,7 +72,7 @@ function WithdrawPage() {
   const override = settings?.withdrawals_open_override;
   const closed = override === false || isSunday;
   const feeEnabled = settings?.withdrawal_fee_enabled !== false;
-  const feePct = feeEnabled ? Number(settings?.withdrawal_fee_percent ?? 1) : 0;
+  const feePct = feeEnabled ? Number(settings?.withdrawal_fee_percent ?? 5) : 0;
   const amt = Math.max(0, Number(amount) || 0);
   const { fee, netAmount: net } = calculateWithdrawalFee(amt, feePct);
   const investmentMetrics = useMemo(() => investments

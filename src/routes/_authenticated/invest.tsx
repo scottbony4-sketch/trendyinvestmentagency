@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Sparkles, TrendingUp, Crown, Sprout } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { fmt } from "@/lib/auth";
+import { fmt, fmtKes, USD_TO_KES_RATE } from "@/lib/auth";
 import { calculateInvestmentPlanMetrics } from "@/lib/investment-withdrawal";
 import { sendMiningCycleStartedEmail } from "@/lib/api/email.functions";
 
@@ -32,6 +32,11 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
 };
 
 const AMOUNT_TIERS = [100, 250, 500];
+
+function formatInvestmentAmount(amount: number | string) {
+  const usd = Number(amount || 0);
+  return `${fmt(usd)} (${fmtKes(usd * USD_TO_KES_RATE)})`;
+}
 
 function getPlanRoi(plan: Pick<Plan, "roi_percent" | "daily_return_percent" | "duration_days">) {
   return Number(plan.roi_percent ?? plan.daily_return_percent * plan.duration_days);
@@ -183,8 +188,8 @@ function InvestPage() {
                 <span className="text-2xl font-black text-primary">20%</span>
                 <span className="text-xs text-muted-foreground">weekly profit</span>
               </div>
-              <div className="mt-2 text-xs text-muted-foreground">
-                {fmt(p.min_amount)} – {p.max_amount ? fmt(p.max_amount) : "∞"}
+              <div className="mt-2 min-w-0 break-words text-xs leading-5 text-muted-foreground">
+                {formatInvestmentAmount(p.min_amount)} – {p.max_amount ? formatInvestmentAmount(p.max_amount) : "∞"}
               </div>
             </button>
           );
@@ -194,19 +199,19 @@ function InvestPage() {
       {selected && (
         <div className="grid gap-4 rounded-2xl border border-border/60 bg-card p-6 sm:grid-cols-2">
           <div>
-            <label className="text-sm font-medium">Investment amount (USD)</label>
-            <div className="mt-2 grid grid-cols-5 gap-2">
+            <label className="text-sm font-medium">Investment amount (USD / KES)</label>
+            <div className="mt-2 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {getPlanAmountTiers(selected).map(a => (
                 <button type="button" key={a} onClick={() => setAmount(a)}
-                  className={`rounded-md border px-2 py-2 text-xs font-semibold transition-colors ${amount === a ? "border-primary bg-primary/15 text-primary" : "border-border hover:border-primary/40"}`}>
-                  {fmt(a)}
+                  className={`min-w-0 rounded-md border px-2 py-2 text-center text-xs leading-5 font-semibold whitespace-normal break-words transition-colors ${amount === a ? "border-primary bg-primary/15 text-primary" : "border-border hover:border-primary/40"}`}>
+                  {formatInvestmentAmount(a)}
                 </button>
               ))}
             </div>
             <input type="number" step="1" min={Number(selected.min_amount)} max={selected.max_amount ?? undefined}
               value={amount || ""} onChange={(e) => setAmount(Math.floor(Number(e.target.value)) || 0)}
               className="mt-2 block w-full rounded-md border border-border bg-background px-3 py-2 text-lg font-bold focus:border-primary focus:outline-none" />
-            <div className="mt-2 text-xs text-muted-foreground">Fixed plan amount · {fmt(selected.min_amount)}</div>
+            <div className="mt-2 break-words text-xs leading-5 text-muted-foreground">Fixed plan amount · {formatInvestmentAmount(selected.min_amount)}</div>
           </div>
 
           <div className="space-y-2 text-sm">
@@ -236,7 +241,7 @@ function InvestPage() {
             <div className="mt-4 space-y-3">
               <div className="rounded-xl border border-border/60 bg-secondary p-4 text-sm">
                 <div className="font-semibold">Available balance</div>
-                <div className="mt-1 text-lg font-bold">{fmt(balance)}</div>
+                <div className="mt-1 text-lg font-bold">{formatInvestmentAmount(balance)}</div>
                 {paymentMethod === "balance" && !balanceAvailable && (
                   <div className="mt-2 text-sm text-red-500">Your available balance is not enough for this mining plan.</div>
                 )}
@@ -270,7 +275,7 @@ function InvestPage() {
             <h2 id="confirm-investment-title" className="text-xl font-bold">Confirm Investment</h2>
             <div className="mt-4 space-y-2 text-sm">
               <Row label="Plan" value={selected.name} />
-              <Row label="Deposit" value={fmt(amount)} />
+              <Row label="Investment amount" value={formatInvestmentAmount(amount)} />
               <Row label="Weekly profit" value={fmt(projected.weekly)} />
               <Row label="Daily accrual" value={fmt(projected.daily)} />
               <Row label="Term" value="90 days" />

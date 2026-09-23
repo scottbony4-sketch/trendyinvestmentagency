@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import { PLANS, fmt } from "@/lib/auth";
+import { PLANS, fmt, fmtKes, USD_TO_KES_RATE } from "@/lib/auth";
 import { sendDepositSubmittedEmail } from "@/lib/api/email.functions";
 import { DataTablePagination } from "@/components/ui/data-table-pagination";
 
@@ -19,6 +19,11 @@ export const Route = createFileRoute("/_authenticated/deposit")({
 });
 
 type Deposit = { id: string; amount: number; mpesa_code: string; status: string; created_at: string; admin_note: string | null };
+
+function formatDepositAmount(amount: number | string) {
+  const usd = Number(amount || 0);
+  return `${fmt(usd)} (${fmtKes(usd * USD_TO_KES_RATE)})`;
+}
 
 function DepositPage() {
   const search = Route.useSearch();
@@ -119,18 +124,18 @@ function DepositPage() {
         <ol className="mt-3 list-decimal space-y-1 pl-5 text-foreground/90">
           <li>Go to Lipa na M-Pesa → Buy Goods</li>
           <li>M-Pesa Till Number: <span className="font-mono font-bold">4970892</span></li>
-          <li>Send exactly the selected USD plan amount, then enter your M-Pesa transaction code.</li>
+          <li>Send exactly the selected plan amount in Kenyan shillings ({formatDepositAmount(amount)}), then enter your M-Pesa transaction code.</li>
         </ol>
       </div>
 
       <form onSubmit={submit} className="card space-y-5 rounded-2xl p-6">
         <div>
-          <label className="text-sm font-medium">Amount (USD)</label>
-          <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
+          <label className="text-sm font-medium">Amount (USD / KES)</label>
+          <div className="mt-2 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {PLANS.map(p => (
               <button type="button" key={p} onClick={() => setAmount(p)}
-                className={`rounded-md border px-2 py-2 text-sm font-medium transition-colors ${amount === p ? "border-primary bg-primary/15 text-primary" : "border-border hover:border-primary/40"}`}>
-                {fmt(p)}
+                className={`min-w-0 rounded-md border px-2 py-2 text-center text-sm leading-5 font-medium whitespace-normal break-words transition-colors ${amount === p ? "border-primary bg-primary/15 text-primary" : "border-border hover:border-primary/40"}`}>
+                {formatDepositAmount(p)}
               </button>
             ))}
           </div>
@@ -151,7 +156,7 @@ function DepositPage() {
             className="mt-2 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none" />
         </div>
         <button disabled={loading} className="rounded-md bg-[image:var(--gradient-gold)] px-5 py-2.5 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-gold)] disabled:opacity-60">
-          {loading ? "Submitting…" : `Submit deposit of ${fmt(amount)}`}
+          {loading ? "Submitting…" : `Submit deposit of ${formatDepositAmount(amount)}`}
         </button>
       </form>
 
@@ -170,7 +175,7 @@ function DepositPage() {
                   {visibleDeposits.map(d => (
                     <tr key={d.id} className="border-t border-border/40">
                       <td className="px-4 py-3 text-muted-foreground">{new Date(d.created_at).toLocaleDateString()}</td>
-                      <td className="px-4 py-3 font-medium">{fmt(d.amount)}</td>
+                      <td className="px-4 py-3 font-medium">{formatDepositAmount(d.amount)}</td>
                       <td className="px-4 py-3 font-mono">{d.mpesa_code}</td>
                       <td className="px-4 py-3"><StatusBadge status={d.status} /></td>
                     </tr>

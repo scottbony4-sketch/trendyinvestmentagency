@@ -417,8 +417,8 @@ function AdminPage() {
 
   const moneyCards = [
     { key: "totalDeposited", label: "Total Deposited", value: moneyData.approvedDepositsTotal, tone: "green", icon: ArrowDownToLine, helper: "Approved M-Pesa deposits only" },
-    { key: "totalWithdrawnGross", label: "Total Withdrawn", value: moneyData.paidWithdrawalsGrossTotal, tone: "red", icon: ArrowUpFromLine, helper: "Approved or paid, before 1% transaction fee" },
-    { key: "totalWithdrawnNet", label: "Total Withdrawn After Fee", value: moneyData.paidWithdrawalsNetTotal, tone: "green", icon: ArrowUpFromLine, helper: "Amount received after 1% transaction fee" },
+    { key: "totalWithdrawnGross", label: "Total Withdrawn", value: moneyData.paidWithdrawalsGrossTotal, tone: "red", icon: ArrowUpFromLine, helper: "Approved or paid, before 5% transaction fee" },
+    { key: "totalWithdrawnNet", label: "Total Withdrawn After Fee", value: moneyData.paidWithdrawalsNetTotal, tone: "green", icon: ArrowUpFromLine, helper: "Amount received after 5% transaction fee" },
     { key: "totalInvested", label: "Total Invested", value: moneyData.totalInvested, tone: "blue", icon: Coins, helper: "Investments started" },
     { key: "totalReinvested", label: "Total Reinvested", value: moneyData.totalReinvested, tone: "blue", icon: TrendingUp, helper: "From available balance" },
     { key: "totalAvailableBalance", label: "Total Available User Balance", value: moneyData.totalAvailableBalance, tone: "green", icon: Wallet, helper: "Current withdrawable balance" },
@@ -2087,7 +2087,7 @@ function SettingsTab() {
     const { data, error } = await supabase.from("app_settings").select("*").eq("id", 1).maybeSingle();
     if (error) return toast.error(error.message);
     if (data) setS(data as SettingsRow);
-    else setS({ id: 1, referral_percent: 10, min_deposit: 500, min_withdrawal: 100, max_withdrawal: 100000, withdrawal_fee_percent: 0, contact_email: "", whatsapp: "", mpesa_till: "", maintenance_mode: false, email_notifications_enabled: true, email_notifications_deposits: true, email_notifications_withdrawals: true, email_notifications_mining: true, email_notifications_referrals: true, email_notifications_account: true });
+    else setS({ id: 1, referral_percent: 10, min_deposit: 500, min_withdrawal: 100, max_withdrawal: 100000, withdrawal_fee_percent: 5, contact_email: "", whatsapp: "", mpesa_till: "", maintenance_mode: false, email_notifications_enabled: true, email_notifications_deposits: true, email_notifications_withdrawals: true, email_notifications_mining: true, email_notifications_referrals: true, email_notifications_account: true });
   }, []);
   useEffect(() => { void load(); }, [load]);
 
