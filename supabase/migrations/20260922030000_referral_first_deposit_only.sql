@@ -1,6 +1,34 @@
 -- Pay referral commissions only when the referred user approves their first deposit.
 -- Later deposits still create investments, but never create referral commissions.
 
+-- Keep this migration safe when an environment did not apply the earlier
+-- referral commission schema migration.
+ALTER TABLE public.referral_earnings
+  ADD COLUMN IF NOT EXISTS deposit_amount numeric(14,6),
+  ADD COLUMN IF NOT EXISTS currency text NOT NULL DEFAULT 'USD',
+  ADD COLUMN IF NOT EXISTS investment_id uuid REFERENCES public.investments(id) ON DELETE SET NULL,
+  ADD COLUMN IF NOT EXISTS level integer NOT NULL DEFAULT 1;
+
+ALTER TABLE public.referral_earnings
+  DROP CONSTRAINT IF EXISTS referral_earnings_deposit_referrer_level;
+
+DROP INDEX IF EXISTS public.referral_earnings_deposit_referrer_level;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'public.referral_earnings'::regclass
+      AND conname = 'referral_earnings_deposit_referrer_level'
+  ) THEN
+    ALTER TABLE public.referral_earnings
+      ADD CONSTRAINT referral_earnings_deposit_referrer_level
+      UNIQUE (deposit_id, referrer_id, level);
+  END IF;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.activate_deposit()
 RETURNS trigger
 LANGUAGE plpgsql
