@@ -17,7 +17,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
 });
 
 type DepositRow = { id: string; user_id: string; amount: number; mpesa_code: string; status: string; created_at: string };
-type WithdrawalRow = { id: string; user_id: string; amount: number; mpesa_phone: string; status: string; created_at: string; processed_at: string | null; admin_note: string | null; payout_mpesa_code: string | null };
+type WithdrawalRow = { id: string; user_id: string; amount: number; fee_amount?: number | null; net_amount?: number | null; mpesa_phone: string; status: string; created_at: string; processed_at: string | null; admin_note: string | null; payout_mpesa_code: string | null };
 type ReferralRow = { id: string; referrer_id: string; referred_id: string; deposit_id: string; amount: number; percent: number; status: string; created_at: string };
 type ProfileLite = { id: string; full_name: string | null; phone: string | null; balance: number; created_at: string; referral_code?: string | null; deleted_at?: string | null; status?: string | null };
 type ActionRow = { id: string; admin_id: string; target_user_id: string; action: string; amount: number | null; note: string | null; created_at: string };
@@ -350,13 +350,13 @@ function AdminPage() {
     const approvedDeposits = deposits.filter(d => d.status === "approved" && matchesMoneyRange(d.created_at));
     const pendingDeposits = deposits.filter(d => d.status === "pending" && matchesMoneyRange(d.created_at));
     const rejectedDeposits = deposits.filter(d => d.status === "rejected" && matchesMoneyRange(d.created_at));
-    const paidWithdrawals = withdrawals.filter(w => w.status === "paid" && matchesMoneyRange(w.created_at));
+    const paidWithdrawals = withdrawals.filter(w => (w.status === "approved" || w.status === "paid") && matchesMoneyRange(w.created_at));
     const approvedWithdrawals = withdrawals.filter(w => w.status === "approved" && matchesMoneyRange(w.created_at));
     const pendingWithdrawals = withdrawals.filter(w => w.status === "pending" && matchesMoneyRange(w.created_at));
     const investmentsInRange = investments.filter(i => matchesMoneyRange(i.created_at));
     const activeInvestments = investmentsInRange.filter(i => i.status === "active");
     const pendingInvestmentsInRange = investmentsInRange.filter(i => i.status === "pending");
-    const completedInvestments = investmentsInRange.filter(i => i.status === "completed");
+    const completedInvestments = investmentsInRange.filter(i => i.status === "completed" || i.status === "matured");
     const reinvestments = investmentsInRange.filter(i => i.payment_source === "balance");
     const dailyRowsInRange = dailyEarnings.filter(row => matchesMoneyRange(row.earning_date));
     const paidDailyEarnings = dailyRowsInRange.filter(row => row.added_to_balance);
@@ -364,7 +364,10 @@ function AdminPage() {
     const paidReferral = referrals.filter(r => r.status === "paid" && matchesMoneyRange(r.created_at));
     const pendingReferral = referrals.filter(r => r.status === "pending" && matchesMoneyRange(r.created_at));
     const feePercent = Number(settings?.withdrawal_fee_percent ?? 0);
-    const withdrawalCharges = paidWithdrawals.reduce((sum, w) => sum + Math.round((Number(w.amount) * feePercent) / 100), 0);
+    const withdrawalNetAmount = (w: WithdrawalRow) => w.net_amount != null
+      ? Number(w.net_amount)
+      : Number(w.amount) - (w.fee_amount != null ? Number(w.fee_amount) : (Number(w.amount) * feePercent) / 100);
+    const withdrawalCharges = paidWithdrawals.reduce((sum, w) => sum + (w.fee_amount != null ? Number(w.fee_amount) : (Number(w.amount) * feePercent) / 100), 0);
 
     const dailyTrend = dailyRowsInRange.reduce<Record<string, number>>((acc, row) => {
       const key = row.earning_date || "unknown";
@@ -377,7 +380,8 @@ function AdminPage() {
       approvedDepositsTotal: approvedDeposits.reduce((sum, d) => sum + Number(d.amount), 0),
       pendingDepositsTotal: pendingDeposits.reduce((sum, d) => sum + Number(d.amount), 0),
       rejectedDepositsTotal: rejectedDeposits.reduce((sum, d) => sum + Number(d.amount), 0),
-      paidWithdrawalsTotal: paidWithdrawals.reduce((sum, w) => sum + Number(w.amount), 0),
+      paidWithdrawalsGrossTotal: paidWithdrawals.reduce((sum, w) => sum + Number(w.amount), 0),
+      paidWithdrawalsNetTotal: paidWithdrawals.reduce((sum, w) => sum + withdrawalNetAmount(w), 0),
       approvedWithdrawalsTotal: approvedWithdrawals.reduce((sum, w) => sum + Number(w.amount), 0),
       pendingWithdrawalsTotal: pendingWithdrawals.reduce((sum, w) => sum + Number(w.amount), 0),
       totalInvested: investmentsInRange.reduce((sum, i) => sum + Number(i.plan_amount), 0),
@@ -413,7 +417,8 @@ function AdminPage() {
 
   const moneyCards = [
     { key: "totalDeposited", label: "Total Deposited", value: moneyData.approvedDepositsTotal, tone: "green", icon: ArrowDownToLine, helper: "Approved M-Pesa deposits only" },
-    { key: "totalWithdrawn", label: "Total Withdrawn", value: moneyData.paidWithdrawalsTotal, tone: "red", icon: ArrowUpFromLine, helper: "Paid withdrawals only" },
+    { key: "totalWithdrawnGross", label: "Total Withdrawn", value: moneyData.paidWithdrawalsGrossTotal, tone: "red", icon: ArrowUpFromLine, helper: "Approved or paid, before 1% transaction fee" },
+    { key: "totalWithdrawnNet", label: "Total Withdrawn After Fee", value: moneyData.paidWithdrawalsNetTotal, tone: "green", icon: ArrowUpFromLine, helper: "Amount received after 1% transaction fee" },
     { key: "totalInvested", label: "Total Invested", value: moneyData.totalInvested, tone: "blue", icon: Coins, helper: "Investments started" },
     { key: "totalReinvested", label: "Total Reinvested", value: moneyData.totalReinvested, tone: "blue", icon: TrendingUp, helper: "From available balance" },
     { key: "totalAvailableBalance", label: "Total Available User Balance", value: moneyData.totalAvailableBalance, tone: "green", icon: Wallet, helper: "Current withdrawable balance" },
@@ -699,6 +704,7 @@ function UsersTab({ users, roles, onDone }: { users: ProfileLite[]; roles: Recor
   const [grantPlanId, setGrantPlanId] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "archived">("all");
   const [mode, setMode] = useState<"create" | "edit">("create");
+  const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [form, setForm] = useState({
     full_name: "",
     phone: "",
@@ -714,6 +720,7 @@ function UsersTab({ users, roles, onDone }: { users: ProfileLite[]; roles: Recor
     setForm({ full_name: "", phone: "", balance: "", referral_code: "", email: "", password: "", role: "user", deleted: false });
     setMode("create");
     setSelected(null);
+    setUserDialogOpen(false);
   };
 
   useEffect(() => {
@@ -924,7 +931,7 @@ function UsersTab({ users, roles, onDone }: { users: ProfileLite[]; roles: Recor
                 </button>
               ))}
             </div>
-            <button onClick={() => { resetForm(); setMode("create"); }} className="rounded-md bg-primary/15 px-3 py-2 text-sm font-semibold text-primary hover:bg-primary/25">New user</button>
+            <button type="button" onClick={() => { resetForm(); setMode("create"); setUserDialogOpen(true); }} className="rounded-md bg-primary/15 px-3 py-2 text-sm font-semibold text-primary hover:bg-primary/25">+ Add user</button>
           </div>
         </div>
         <div className="overflow-x-auto">
@@ -950,11 +957,11 @@ function UsersTab({ users, roles, onDone }: { users: ProfileLite[]; roles: Recor
                     <td className="px-4 py-3 font-semibold">{fmt(u.balance)}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex justify-end gap-2">
-                        <button onClick={() => setSelected(u)} className="rounded-md bg-primary/15 px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/25">Edit</button>
+                        <button type="button" onClick={() => { setSelected(u); setUserDialogOpen(true); }} className="rounded-md bg-primary/15 px-3 py-1 text-xs font-semibold text-primary hover:bg-primary/25">Edit</button>
                         {!u.deleted_at ? (
-                          <button onClick={() => { setSelected(u); setMode("edit"); setForm((prev) => ({ ...prev, deleted: true })); }} className="rounded-md bg-amber-500/15 px-3 py-1 text-xs font-semibold text-amber-500 hover:bg-amber-500/25">Archive</button>
+                          <button type="button" onClick={() => { setSelected(u); setMode("edit"); setForm((prev) => ({ ...prev, deleted: true })); setUserDialogOpen(true); }} className="rounded-md bg-amber-500/15 px-3 py-1 text-xs font-semibold text-amber-500 hover:bg-amber-500/25">Archive</button>
                         ) : (
-                          <button onClick={() => { setSelected(u); setMode("edit"); setForm((prev) => ({ ...prev, deleted: false })); }} className="rounded-md bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-500 hover:bg-emerald-500/25">Restore</button>
+                          <button type="button" onClick={() => { setSelected(u); setMode("edit"); setForm((prev) => ({ ...prev, deleted: false })); setUserDialogOpen(true); }} className="rounded-md bg-emerald-500/15 px-3 py-1 text-xs font-semibold text-emerald-500 hover:bg-emerald-500/25">Restore</button>
                         )}
                       </div>
                     </td>
@@ -977,20 +984,22 @@ function UsersTab({ users, roles, onDone }: { users: ProfileLite[]; roles: Recor
         />
       </div>
 
-      <div className="rounded-2xl border border-border/60 bg-card p-5 h-fit">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="text-lg font-bold">{mode === "create" ? "Create user" : "Manage user"}</h3>
-          {selected && <span className="text-xs uppercase tracking-wide text-muted-foreground">{selected.deleted_at ? "Archived" : "Active"}</span>}
-        </div>
+      <Dialog open={userDialogOpen} onOpenChange={(open) => { if (!open && !busy) resetForm(); }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{mode === "create" ? "Add new user" : "Manage user"}</DialogTitle>
+            <DialogDescription>{mode === "create" ? "Create an account and assign its initial access level." : "Update account details, status, balance, or mining access."}</DialogDescription>
+          </DialogHeader>
 
-        <form onSubmit={saveUser} className="mt-4 space-y-4">
+        <form onSubmit={saveUser} className="space-y-4 text-sm">
+          <div className="grid gap-3 sm:grid-cols-2">
           <label className="block">
             <span className="text-sm font-medium">Full name</span>
-            <input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+            <input autoFocus value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none" placeholder="Full name" />
           </label>
           <label className="block">
             <span className="text-sm font-medium">Phone</span>
-            <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none" />
+            <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="mt-1 block w-full rounded-md border border-border bg-background px-3 py-2 text-sm focus:border-primary focus:outline-none" placeholder="Phone number" />
           </label>
           <label className="block">
             <span className="text-sm font-medium">Referral code</span>
@@ -1007,6 +1016,7 @@ function UsersTab({ users, roles, onDone }: { users: ProfileLite[]; roles: Recor
               <option value="admin">Admin</option>
             </select>
           </label>
+          </div>
           {mode === "create" ? (
             <>
               <label className="block">
@@ -1025,7 +1035,7 @@ function UsersTab({ users, roles, onDone }: { users: ProfileLite[]; roles: Recor
             </label>
           )}
 
-          <div className="rounded-md bg-secondary/40 p-3 text-sm">
+          {mode === "edit" && <div className="rounded-md border border-border/60 bg-secondary/40 p-4">
             <div className="font-semibold">Quick actions</div>
             <div className="mt-3 grid gap-2">
               <div className="flex flex-wrap gap-2">
@@ -1056,11 +1066,12 @@ function UsersTab({ users, roles, onDone }: { users: ProfileLite[]; roles: Recor
                 {selectedGrantPlan ? `Grant ${selectedGrantPlan.name}` : "Grant mining plan"}
               </button>
             </div>
-          </div>
+          </div>}
 
-          <div className="flex flex-wrap gap-2">
-            <button disabled={busy} className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60">
-              {mode === "create" ? "Create user" : "Save changes"}
+          <div className="flex flex-wrap justify-end gap-2 pt-2">
+            <button type="button" onClick={resetForm} className="rounded-md border border-border px-4 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground">Cancel</button>
+            <button type="submit" disabled={busy} className="rounded-md bg-primary px-5 py-2 text-sm font-semibold text-primary-foreground disabled:opacity-60">
+              {busy ? "Saving..." : mode === "create" ? "Create user" : "Save changes"}
             </button>
             {mode === "edit" && selected && (
               <>
@@ -1070,12 +1081,12 @@ function UsersTab({ users, roles, onDone }: { users: ProfileLite[]; roles: Recor
                   <button type="button" disabled={busy} onClick={restoreUser} className="rounded-md bg-emerald-500/15 px-3 py-2 text-sm font-semibold text-emerald-500 hover:bg-emerald-500/25 disabled:opacity-60">Restore</button>
                 )}
                 <button type="button" disabled={busy} onClick={hardDeleteUser} className="rounded-md bg-red-500/15 px-3 py-2 text-sm font-semibold text-red-400 hover:bg-red-500/25 disabled:opacity-60">Delete</button>
-                <button type="button" onClick={resetForm} className="rounded-md border border-border px-3 py-2 text-sm font-semibold text-muted-foreground hover:text-foreground">Clear</button>
               </>
             )}
           </div>
         </form>
-      </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -1279,6 +1290,11 @@ function WithdrawalsTab({ withdrawals, profiles, settings, onFinalize }: { withd
   const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
   const safePage = Math.min(page, totalPages);
   const visibleWithdrawals = filtered.slice((safePage - 1) * rowsPerPage, safePage * rowsPerPage);
+  const selectedRequestedAmount = Number(selected?.amount || 0);
+  const selectedFeeEnabled = settings?.withdrawal_fee_enabled !== false;
+  const selectedFeePercent = selectedFeeEnabled ? Number(settings?.withdrawal_fee_percent ?? 20) : 0;
+  const selectedFee = Number(((selectedRequestedAmount * selectedFeePercent) / 100).toFixed(2));
+  const selectedNetAmount = Number((selectedRequestedAmount - selectedFee).toFixed(2));
 
   useEffect(() => {
     setPage(1);
@@ -1393,7 +1409,9 @@ function WithdrawalsTab({ withdrawals, profiles, settings, onFinalize }: { withd
             <div className="rounded-md bg-secondary/40 p-3 text-sm space-y-1">
               <div className="flex justify-between"><span className="text-muted-foreground">User</span><span className="font-semibold">{profiles[selected.user_id]?.full_name || "—"}</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Send to</span><span className="font-mono">{selected.mpesa_phone}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Amount</span><span className="font-semibold text-primary">{fmt(selected.amount)}</span></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Requested</span><span className="text-right font-semibold text-primary">{fmt(selectedRequestedAmount)} ({fmtKes(selectedRequestedAmount * USD_TO_KES_RATE)})</span></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Charge ({selectedFeePercent}%)</span><span className="text-right">{fmt(selectedFee)} ({fmtKes(selectedFee * USD_TO_KES_RATE)})</span></div>
+              <div className="flex justify-between gap-4"><span className="text-muted-foreground">Net payout</span><span className="text-right font-semibold text-emerald-400">{fmt(selectedNetAmount)} ({fmtKes(selectedNetAmount * USD_TO_KES_RATE)})</span></div>
               <div className="flex justify-between"><span className="text-muted-foreground">Status</span><Badge status={selected.status} /></div>
             </div>
 
@@ -1683,7 +1701,7 @@ function MoneyFlowAnalyticsTab({ range, setRange, customStart, setCustomStart, c
           <div className="mb-3 text-sm font-semibold">Deposits vs Withdrawals</div>
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={[{ label: "Deposits", deposits: moneyData.approvedDepositsTotal, withdrawals: moneyData.paidWithdrawalsTotal }]}> 
+              <BarChart data={[{ label: "Deposits", deposits: moneyData.approvedDepositsTotal, withdrawals: moneyData.paidWithdrawalsNetTotal }]}> 
                 <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
                 <XAxis dataKey="label" />
                 <YAxis />
@@ -1923,7 +1941,7 @@ function PlansTab({ investments, dailyEarnings, withdrawals, referrals, deposits
   useEffect(() => { setPage(1); }, [planSearch, rowsPerPage]);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr,380px]">
+    <div>
       <div className="space-y-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <h3 className="text-lg font-bold">Investment plans</h3>
@@ -2022,34 +2040,41 @@ function PlansTab({ investments, dailyEarnings, withdrawals, referrals, deposits
         </div>
       </div>
 
-      <div className="rounded-2xl border border-border/60 bg-card p-5 h-fit">
-        <h3 className="text-lg font-bold">{editing ? (("id" in editing && editing.id) ? "Edit plan" : "New plan") : "Plan editor"}</h3>
-        {!editing ? (
-          <p className="mt-2 text-sm text-muted-foreground">Select a plan to edit, or create a new one.</p>
-        ) : (
-          <div className="mt-4 space-y-3 text-sm">
-            <Field label="Name"><input value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className={inputCls} /></Field>
-            <Field label="Slug"><input value={editing.slug} onChange={e => setEditing({ ...editing, slug: e.target.value })} className={inputCls} /></Field>
-            <Field label="Description"><textarea rows={2} value={editing.description ?? ""} onChange={e => setEditing({ ...editing, description: e.target.value })} className={inputCls} /></Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Duration (days)"><input type="number" min="1" value={editing.duration_days} onChange={e => setEditing({ ...editing, duration_days: Number(e.target.value) })} className={inputCls} /></Field>
-              <Field label="ROI %"><input type="number" min="1" step="1" value={editing.roi_percent ?? editing.daily_return_percent ?? ""} onChange={e => setEditing({ ...editing, roi_percent: Number(e.target.value) })} className={inputCls} /></Field>
-              <Field label="Min amount"><input type="number" min="0" value={editing.min_amount} onChange={e => setEditing({ ...editing, min_amount: Number(e.target.value) })} className={inputCls} /></Field>
-              <Field label="Max amount"><input type="number" min="0" value={editing.max_amount ?? ""} onChange={e => setEditing({ ...editing, max_amount: e.target.value ? Number(e.target.value) : null })} className={inputCls} placeholder="none" /></Field>
-              <Field label="Unlock day"><input type="number" min="1" value={editing.unlock_day ?? 1} onChange={e => setEditing({ ...editing, unlock_day: Number(e.target.value) })} className={inputCls} /></Field>
-              <Field label="Sort order"><input type="number" value={editing.sort_order} onChange={e => setEditing({ ...editing, sort_order: Number(e.target.value) })} className={inputCls} /></Field>
-              <Field label="Color"><input type="color" value={editing.color ?? "#F5B301"} onChange={e => setEditing({ ...editing, color: e.target.value })} className="h-9 w-full rounded-md border border-border bg-background" /></Field>
-              <Field label="Amount presets"><input value={Array.isArray(editing.amount_presets) ? editing.amount_presets.join(", ") : ""} onChange={e => setEditing({ ...editing, amount_presets: e.target.value.split(",").map(v => Number(v.trim())).filter(v => Number.isFinite(v) && v > 0) })} className={inputCls} placeholder="250, 500, 1000" /></Field>
-            </div>
-            <Field label="Icon (lucide name)"><input value={editing.icon ?? ""} onChange={e => setEditing({ ...editing, icon: e.target.value })} className={inputCls} placeholder="sparkles" /></Field>
-            <label className="flex items-center gap-2"><input type="checkbox" checked={editing.is_active} onChange={e => setEditing({ ...editing, is_active: e.target.checked })} /> <span>Active (visible to users)</span></label>
-            <div className="flex gap-2 pt-2">
-              <button disabled={busy} onClick={savePlan} className="flex-1 rounded-md bg-[image:var(--gradient-gold)] px-3 py-2 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-gold)] disabled:opacity-60">Save</button>
-              <button onClick={() => setEditing(null)} className="rounded-md border border-border px-3 py-2 text-sm">Cancel</button>
-            </div>
-          </div>
-        )}
-      </div>
+      <Dialog open={Boolean(editing)} onOpenChange={(open) => { if (!open && !busy) setEditing(null); }}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+          {editing && (
+            <>
+              <DialogHeader>
+                <DialogTitle>{("id" in editing && editing.id) ? "Edit investment plan" : "Create investment plan"}</DialogTitle>
+                <DialogDescription>Set the plan details, pricing, returns, and visibility.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 text-sm">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Name"><input autoFocus value={editing.name} onChange={e => setEditing({ ...editing, name: e.target.value })} className={inputCls} placeholder="Silver" /></Field>
+                  <Field label="Slug"><input value={editing.slug} onChange={e => setEditing({ ...editing, slug: e.target.value })} className={inputCls} placeholder="silver" /></Field>
+                </div>
+                <Field label="Description"><textarea rows={3} value={editing.description ?? ""} onChange={e => setEditing({ ...editing, description: e.target.value })} className={inputCls} placeholder="Describe this investment plan" /></Field>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Field label="Duration (days)"><input type="number" min="1" value={editing.duration_days} onChange={e => setEditing({ ...editing, duration_days: Number(e.target.value) })} className={inputCls} /></Field>
+                  <Field label="ROI %"><input type="number" min="0" step="1" value={editing.roi_percent ?? editing.daily_return_percent ?? ""} onChange={e => setEditing({ ...editing, roi_percent: Number(e.target.value) })} className={inputCls} /></Field>
+                  <Field label="Min amount"><input type="number" min="0" value={editing.min_amount} onChange={e => setEditing({ ...editing, min_amount: Number(e.target.value) })} className={inputCls} /></Field>
+                  <Field label="Max amount"><input type="number" min="0" value={editing.max_amount ?? ""} onChange={e => setEditing({ ...editing, max_amount: e.target.value ? Number(e.target.value) : null })} className={inputCls} placeholder="No limit" /></Field>
+                  <Field label="Unlock day"><input type="number" min="1" value={editing.unlock_day ?? 1} onChange={e => setEditing({ ...editing, unlock_day: Number(e.target.value) })} className={inputCls} /></Field>
+                  <Field label="Sort order"><input type="number" value={editing.sort_order} onChange={e => setEditing({ ...editing, sort_order: Number(e.target.value) })} className={inputCls} /></Field>
+                  <Field label="Color"><input type="color" value={editing.color ?? "#F5B301"} onChange={e => setEditing({ ...editing, color: e.target.value })} className="h-9 w-full rounded-md border border-border bg-background" /></Field>
+                  <Field label="Amount presets"><input value={Array.isArray(editing.amount_presets) ? editing.amount_presets.join(", ") : ""} onChange={e => setEditing({ ...editing, amount_presets: e.target.value.split(",").map(v => Number(v.trim())).filter(v => Number.isFinite(v) && v > 0) })} className={inputCls} placeholder="250, 500, 1000" /></Field>
+                </div>
+                <Field label="Icon (lucide name)"><input value={editing.icon ?? ""} onChange={e => setEditing({ ...editing, icon: e.target.value })} className={inputCls} placeholder="sparkles" /></Field>
+                <label className="flex items-center gap-2"><input type="checkbox" checked={editing.is_active} onChange={e => setEditing({ ...editing, is_active: e.target.checked })} /> <span>Active (visible to users)</span></label>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button type="button" onClick={() => setEditing(null)} className="rounded-md border border-border px-4 py-2 text-sm">Cancel</button>
+                  <button type="button" disabled={busy} onClick={savePlan} className="rounded-md bg-[image:var(--gradient-gold)] px-5 py-2 text-sm font-semibold text-primary-foreground shadow-[var(--shadow-gold)] disabled:opacity-60">{busy ? "Saving..." : "Save plan"}</button>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

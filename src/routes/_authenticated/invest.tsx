@@ -61,6 +61,7 @@ function InvestPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
 
   useEffect(() => {
     void Promise.all([
@@ -81,6 +82,15 @@ function InvestPage() {
     });
   }, []);
 
+  useEffect(() => {
+    void (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setIsAdmin(false); return; }
+      const { data } = await supabase.from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin").maybeSingle();
+      setIsAdmin(Boolean(data));
+    })();
+  }, []);
+
   const projected = useMemo(() => {
     if (!selected || !amount) return null;
     const roi = getPlanRoi(selected);
@@ -92,6 +102,15 @@ function InvestPage() {
   const amountValid = selected ? amount >= Number(selected.min_amount) && (selected.max_amount === null || amount <= Number(selected.max_amount)) : false;
   const balanceAvailable = balance >= amount;
   const submitDisabled = loading || !selected || !amountValid || (paymentMethod === "balance" && !balanceAvailable);
+
+  if (isAdmin) {
+    return (
+      <div className="rounded-2xl border border-border/60 bg-card p-6">
+        <h1 className="text-2xl font-bold">Investments unavailable</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Administrators cannot invest in their own account.</p>
+      </div>
+    );
+  }
 
   const proceed = async () => {
     if (!selected) return;

@@ -28,6 +28,7 @@ function DepositPage() {
   const [phone, setPhone] = useState("");
   const [payerName, setPayerName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [page, setPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(5);
@@ -37,6 +38,14 @@ function DepositPage() {
     if (data) setDeposits(data as Deposit[]);
   };
   useEffect(() => { void refresh(); }, []);
+  useEffect(() => {
+    void (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setIsAdmin(false); return; }
+      const { data } = await supabase.from("user_roles").select("role").eq("user_id", user.id).eq("role", "admin").maybeSingle();
+      setIsAdmin(Boolean(data));
+    })();
+  }, []);
 
   const totalPages = Math.max(1, Math.ceil(deposits.length / rowsPerPage));
   const safePage = Math.min(page, totalPages);
@@ -49,6 +58,15 @@ function DepositPage() {
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
+
+  if (isAdmin) {
+    return (
+      <div className="rounded-2xl border border-border/60 bg-card p-6">
+        <h1 className="text-2xl font-bold">Deposits unavailable</h1>
+        <p className="mt-2 text-sm text-muted-foreground">Administrators cannot deposit into their own account.</p>
+      </div>
+    );
+  }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,7 +119,7 @@ function DepositPage() {
         <ol className="mt-3 list-decimal space-y-1 pl-5 text-foreground/90">
           <li>Go to Lipa na M-Pesa → Buy Goods</li>
           <li>M-Pesa Till Number: <span className="font-mono font-bold">4970892</span></li>
-          <li>Send exactly the selected USD plan amount, then enter your M-Pesa transaction code for admin verification.</li>
+          <li>Send exactly the selected USD plan amount, then enter your M-Pesa transaction code.</li>
         </ol>
       </div>
 
